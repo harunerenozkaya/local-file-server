@@ -5,65 +5,132 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <string.h>
+#include <semaphore.h>
+#include <iostream>
 
-#define FIFO_PATH "/tmp/clientFifo"
-#define SHM_PATH "tmp/shm"
-#define SEM_PATH "tmp/sem"
+using namespace std;
+#define FIFO_SERVER_PATH "/tmp/server_fifo"
+#define FIFO_CLIENT_PATH "/tmp/client_fifo"
+#define SHM_PATH "/tmp/shm"
+#define SEM_PATH_SERVER "/tmp/semServer"
+#define SEM_PATH_CLIENT "/tmp/semClient"
+
+#define MAX_CLIENT 5
 
 int main()
 {
-    int fd;
-    char buf[256];
+    int fd_server;
+    int fd_client;
+    char buf_read[256];
+    char buf_write[256];
     ssize_t n;
-
+    int currentClientCount = 5;
+    
     //Convert pid to char array 
     int pid = getpid();
     char pid_s[32] = "";
     snprintf(pid_s,32,"%d",pid);
-    //printf("%s\n",pid_s);
- 
-    
-    // Set fifo path 
-    char fifo_path[64] = ""; 
-    strcat(fifo_path,FIFO_PATH);
-    strcat(fifo_path,pid_s);
-    //printf("%s\n",fifo_path);
+    //printf("SERVER PID : %s\n",pid_s);
 
-    
-    // Create the named FIFO 
-    if(mkfifo(fifo_path, 0666) == -1){
-        printf("ERROR : clientFifo couldn't be created");
+    // Open the named semaphore to synchorinize all child server process operations
+    char sem_path[32] = "";
+    strcat(sem_path,SEM_PATH_SERVER);
+    strcat(sem_path,pid_s);
+    sem_t *sem = sem_open(sem_path, O_CREAT, 0644, 1);
+    if (sem == SEM_FAILED) {
+        cout << "Failed to open semaphore" << endl;
         return -1;
     }
-    
+ 
+    // Set server fifo path
+    char fifo_server_path[64] = ""; 
+    strcat(fifo_server_path,FIFO_SERVER_PATH);
+    strcat(fifo_server_path,pid_s);
+    //printf("FIFO_SERVER_PATH : %s\n",fifo_server_path);
+
+    // Create server FIFO 
+    if(mkfifo(fifo_server_path, 0666) == -1){
+        printf("ERROR : fifo_swcr couldn't be created");
+        return -1;
+    }
+   
     printf("Server Started PID : %d\n",pid);
     printf("Waiting for clients...\n");
 
-
-    // Open the named FIFO for reading 
-    fd = open(fifo_path, O_RDONLY);
-    if(fd == -1){
+    // Open the server FIFO for reading 
+    fd_server = open(fifo_server_path, O_RDONLY);
+    if(fd_server == -1){
         printf("ERROR : clientFifo couldn't be opened");
         return -1;
     }
 
-    // Read data from the FIFO 
+    // Read data from the client via fd_server fifo
     while (1) {
-        ssize_t n = read(fd, buf, sizeof(buf));
+        ssize_t n = read(fd_server, buf_read, sizeof(buf_read));
         
         if(n == -1){
             printf("ERROR : clientFifo couldn't be read!");
         } 
         else if (n > 0) {
-            buf[n] = '\0';  // Add null terminator
-            printf("Received data: %s\n", buf);
+            char response[128] = "";
+
+            char connectionType = buf_read[strlen(buf_read)-1];
+            buf_read[strlen(buf_read) -1] = '\0';
+            char* clientPid = buf_read;
+
+            // Set client fifo path and open client fifo
+            char fifo_client_path[64] = ""; 
+            strcat(fifo_client_path,FIFO_CLIENT_PATH);
+            strcat(fifo_client_path,clientPid);
+
+            //printf("%c",connectionType);
+            //printf("Received data: %s\n", clientPid);
+            //printf("FIFO_CLIENT_PATH : %s\n",fifo_client_path);
+
+            // Open clientFifo thanks to clientPID in the request
+            fd_client = open(fifo_client_path, O_RDWR);
+            if(fd_client == -1){
+                printf("ERROR : clientFifo couldn't be opened");
+                return -1;
+            }
+
+            //Response to connection request
+
+            //If request is tryConnect and currentClientCount is full than reject
+            if(connectionType == 't' && currentClientCount == MAX_CLIENT){
+                strcat(response,"ERROR : Server has been reached the maximum client!\n");
+                if(write(fd_client,response,strlen(response)) == -1){
+                    printf("ERROR : Server connection response couldn't be writed");
+                    return -1;
+                }
+            }
+            //If request is Connect and currentClientCount is full than put queue
+            else if(connectionType == 'c' && currentClientCount == MAX_CLIENT){
+                strcat(response,"WARNING : Server has been reached the maximum client! You are in queue\n");
+                if(write(fd_client,response,strlen(response)) == -1){
+                    printf("ERROR : Server connection response couldn't be writed");
+                    return -1;
+                }
+            }
+            //If currentClientCode is appropriate than approve
+            else{
+                strcat(response,"SUCCESS : Connection established\n");
+                if(write(fd_client,response,strlen(response)) == -1){
+                    printf("ERROR : Server connection response couldn't be writed");
+                    return -1;
+                }
+                
+                printf("Client PID %s connected\n",clientPid);
+            }
+            fflush(stdout);
         }
         //clear buffer
-        memset(buf, 0, sizeof(buf));  
+        std::memset(buf_read, 0, sizeof(buf_read));  
     }
 
-    close(fd);
-    unlink(fifo_path);
+    close(fd_client);
+    close(fd_server);
+    unlink(fifo_server_path);
     return 0;
 }
 
