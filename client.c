@@ -14,14 +14,13 @@
 #define SEM_PATH_SERVER "tmp/semServer"
 #define SEM_PATH_CLIENT "tmp/semClient"
 
-using namespace std;
 
 int main(int argc, char *argv[])
 {   
     int fd_server;
     int fd_client;
-    char buf_read[256];
-    char buf_write[256];
+    char buf_read[256] = "";
+    char buf_write[256] = "";
 
     /*Convert pid to char array */
     int pid = getpid();
@@ -91,7 +90,14 @@ int main(int argc, char *argv[])
             return -1;
         }
         else if(n > 0){
+            char connectionStatus[5] = "";
+            
             printf("%s",buf_read);
+
+            strncpy(connectionStatus,buf_read,5);
+            if(strcmp(connectionStatus,"ERROR") == 0)
+                return -1;
+            
         }
         //clear buffer
         memset(connectData, 0, sizeof(connectData)); 

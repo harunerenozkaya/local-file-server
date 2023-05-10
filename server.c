@@ -6,9 +6,8 @@
 #include <sys/types.h>
 #include <string.h>
 #include <semaphore.h>
-#include <iostream>
+#include "queue.h"
 
-using namespace std;
 #define FIFO_SERVER_PATH "/tmp/server_fifo"
 #define FIFO_CLIENT_PATH "/tmp/client_fifo"
 #define SHM_PATH "/tmp/shm"
@@ -24,7 +23,9 @@ int main()
     char buf_read[256];
     char buf_write[256];
     ssize_t n;
+
     int currentClientCount = 5;
+    queue_t* queue = createQueue();
     
     //Convert pid to char array 
     int pid = getpid();
@@ -38,7 +39,7 @@ int main()
     strcat(sem_path,pid_s);
     sem_t *sem = sem_open(sem_path, O_CREAT, 0644, 1);
     if (sem == SEM_FAILED) {
-        cout << "Failed to open semaphore" << endl;
+        printf("Failed to open semaphore\n");
         return -1;
     }
  
@@ -103,6 +104,7 @@ int main()
                     printf("ERROR : Server connection response couldn't be writed");
                     return -1;
                 }
+                printf("Client(%s) rejected\n",clientPid);
             }
             //If request is Connect and currentClientCount is full than put queue
             else if(connectionType == 'c' && currentClientCount == MAX_CLIENT){
@@ -111,6 +113,9 @@ int main()
                     printf("ERROR : Server connection response couldn't be writed");
                     return -1;
                 }
+                //Insert client queue
+                enqueue(queue, clientPid);
+                printf("Client(%s) inserted queue\n",clientPid);
             }
             //If currentClientCode is appropriate than approve
             else{
@@ -121,11 +126,12 @@ int main()
                 }
                 
                 printf("Client PID %s connected\n",clientPid);
+                currentClientCount += 1;
             }
             fflush(stdout);
         }
         //clear buffer
-        std::memset(buf_read, 0, sizeof(buf_read));  
+        memset(buf_read, 0, sizeof(buf_read));  
     }
 
     close(fd_client);

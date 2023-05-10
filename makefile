@@ -1,8 +1,9 @@
 all: compile run
 
 compile:
-	g++ server.cpp -o server.o
-	g++ client.cpp -o client.o
+	gcc -c queue.c -o queue.o
+	gcc server.c queue.o -o server.o
+	gcc client.c -o client.o
 
 run:
 	./server.o
