@@ -40,7 +40,8 @@ char* dequeue(queue_t* queue) {
     }
     
     node_t* temp = queue->front;
-    char* data = temp->data;
+    char* data = malloc(sizeof(temp->data));
+    strcpy(data,temp->data);
     
     queue->front = queue->front->next;
     free(temp->data);
@@ -49,7 +50,7 @@ char* dequeue(queue_t* queue) {
     if (queue->front == NULL) {
         queue->rear = NULL;
     }
-    
+
     return data;
 }
 
