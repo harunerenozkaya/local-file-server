@@ -84,7 +84,7 @@ void create_child_server(char* pid){
         //Set shared memory path
 
         /* Semaphore to synchorinize handle operations between server and client*/
-        sem_t* sem = sem_open(sem_path, O_CREAT | S_IRUSR | S_IWUSR, 0666, 1);
+        sem_t* sem = sem_open(sem_path, O_CREAT, 0666, 1);
         if (sem < 0) {
             perror("ERROR : Shared memory for communication between server and client");
             exit(1);
@@ -114,7 +114,7 @@ void create_child_server(char* pid){
         while(1){
             printf("bekliyor %s\n",pid);
             sem_wait(sem);
-            sleep(1);
+            sleep(3);
             printf("işlem yapıyor\n");
             sem_post(sem);
         }

@@ -199,9 +199,9 @@ int main(int argc, char *argv[])
     strcat(shm_path,pid_s);
 
     /* Semaphore to synchorinize handle operations between server and client*/
-    sem_t* sem = sem_open(sem_path, O_CREAT, 0666,1);
-    while (sem < 0) {
-        sem = sem_open(sem_path, O_CREAT, 0666,1);
+    sem_t* sem = sem_open(sem_path,0);
+    while (sem == SEM_FAILED) {
+        sem = sem_open(sem_path,0);
     }
 
     /*Shared memory to communicate between server and client*/
