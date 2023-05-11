@@ -7,7 +7,6 @@
 #include <string.h>
 #include <errno.h>
 
-
 #define FIFO_SERVER_PATH "/tmp/server_fifo"
 #define FIFO_CLIENT_PATH "/tmp/client_fifo"
 #define SHM_PATH "tmp/shm"
@@ -15,12 +14,56 @@
 #define SEM_PATH_CLIENT "tmp/semClient"
 
 
+//TODO if client is waiting and ctcl-c send server to request to quit
+
+void close_client_fifo(int pid){
+    /*Convert pid to char array */
+    char pid_s[32] = "";
+    snprintf(pid_s,32,"%d",pid);
+
+    // Set fifo client path
+    char fifo_client_path[64] = ""; 
+    strcat(fifo_client_path,FIFO_CLIENT_PATH);
+    strcat(fifo_client_path,pid_s);
+
+    unlink(fifo_client_path);
+}
+
+void sig_handler(int signo){
+    if (signo == SIGINT){
+        close_client_fifo(getpid());
+        exit(1);
+    }
+    else if (signo == SIGTERM){
+        close_client_fifo(getpid());
+        exit(1);
+    }
+    else if (signo == SIGQUIT){
+        close_client_fifo(getpid());
+        exit(1);
+    }
+    else if (signo == SIGTSTP){
+        close_client_fifo(getpid());
+        exit(1);
+    }
+}
+
 int main(int argc, char *argv[])
 {   
     int fd_server;
     int fd_client;
     char buf_read[256] = "";
     char buf_write[256] = "";
+
+    //Determine signal handlers
+    if (signal(SIGINT, sig_handler) == SIG_ERR)
+        perror("\nERROR : can't catch SIGINT\n");
+    if (signal(SIGTERM, sig_handler) == SIG_ERR)
+        perror("\nERROR : can't catch SIGTERM\n");
+    if (signal(SIGQUIT, sig_handler) == SIG_ERR)
+        perror("\nERROR : can't catch SIGQUIT\n");
+    if (signal(SIGTSTP, sig_handler) == SIG_ERR)
+        perror("\nERROR : can't catch SIGTSTP\n");
 
     /*Convert pid to char array */
     int pid = getpid();

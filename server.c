@@ -7,18 +7,59 @@
 #include <string.h>
 #include <semaphore.h>
 #include "queue.h"
+#include <sys/mman.h>
 
 #define FIFO_SERVER_PATH "/tmp/server_fifo"
 #define FIFO_CLIENT_PATH "/tmp/client_fifo"
-#define SHM_PATH "/tmp/shm"
+#define SHM_MAINSERVER_PATH "/tmp/shm_server_main2"
+#define SHM_PATH "tmp/shm"
 #define SEM_PATH_SERVER "/tmp/semServer"
 #define SEM_PATH_CLIENT "/tmp/semClient"
 
 #define MAX_CLIENT 5
 
+// Shared memory struct
+typedef struct {
+    int currentClientCount;
+    queue_t* queue;
+} shared_serverInfo_t;
 
-int currentClientCount = 0; //TODO , currentClientCount isn't shared , make shared
-queue_t* queue; //TODO , queue isn't shared , make shared
+void close_server_fifo(int pid){
+    //Convert pid to char array 
+    char pid_s[32] = "";
+    snprintf(pid_s,32,"%d",pid);
+    //printf("SERVER PID : %s\n",pid_s);
+
+    // Set server fifo path
+    char fifo_server_path[64] = ""; 
+    strcat(fifo_server_path,FIFO_SERVER_PATH);
+    strcat(fifo_server_path,pid_s);
+
+    unlink(fifo_server_path);
+}
+
+void sig_handler(int signo){
+    if (signo == SIGINT){
+        shm_unlink(SHM_MAINSERVER_PATH);
+        close_server_fifo(getpid());
+        exit(1);
+    }
+    else if (signo == SIGTERM){
+        shm_unlink(SHM_MAINSERVER_PATH);
+        close_server_fifo(getpid());
+        exit(1);
+    }
+    else if (signo == SIGQUIT){
+        shm_unlink(SHM_MAINSERVER_PATH);
+        close_server_fifo(getpid());
+        exit(1);
+    }
+    else if (signo == SIGTSTP){
+        shm_unlink(SHM_MAINSERVER_PATH);
+        close_server_fifo(getpid());
+        exit(1);
+    }
+}
 
 int main()
 {
@@ -28,27 +69,45 @@ int main()
     char buf_write[256];
     ssize_t n;
 
-    queue = createQueue();
-    //TODO trying (delete)
-    enqueue(queue, "1111");
-    enqueue(queue, "2222");
-    enqueue(queue, "3333");
+    //Determine signal handlers
+    if (signal(SIGINT, sig_handler) == SIG_ERR)
+        perror("\nERROR : can't catch SIGINT\n");
+    if (signal(SIGTERM, sig_handler) == SIG_ERR)
+        perror("\nERROR : can't catch SIGTERM\n");
+    if (signal(SIGQUIT, sig_handler) == SIG_ERR)
+        perror("\nERROR : can't catch SIGQUIT\n");
+    if (signal(SIGTSTP, sig_handler) == SIG_ERR)
+        perror("\nERROR : can't catch SIGTSTP\n");
+        
+    // Create shared memory for client count and queue
+    int shm_serverInfo_fd = shm_open(SHM_MAINSERVER_PATH, O_CREAT | O_RDWR, 0666);
+    if (shm_serverInfo_fd == -1) {
+        perror("ERROR : Shared memory for client count and queue couldn't be opened");
+        exit(1);
+    }
+
+    // Set shared memory size for client count and queue
+    if (ftruncate(shm_serverInfo_fd, sizeof(shared_serverInfo_t)) == -1) {
+        perror("ERROR : Shared memory size couldnt be set");
+        exit(1);
+    }
+
+    // Map shared memory into the address space of the parent and child processes
+    shared_serverInfo_t* serverInfo = mmap(NULL, sizeof(shared_serverInfo_t), PROT_READ | PROT_WRITE, MAP_SHARED, shm_serverInfo_fd, 0);
+    if (serverInfo == MAP_FAILED) {
+        perror("ERROR : Shared memory couldn't be mapped");
+        exit(1);
+    }
+
+    // Initialize shared memory of current client count and queue
+    serverInfo->currentClientCount = 0;
+    serverInfo->queue = createQueue();
 
     //Convert pid to char array 
     int pid = getpid();
     char pid_s[32] = "";
     snprintf(pid_s,32,"%d",pid);
     //printf("SERVER PID : %s\n",pid_s);
-
-    // Open the named semaphore to synchorinize all child server process operations
-    char sem_path[32] = "";
-    strcat(sem_path,SEM_PATH_SERVER);
-    strcat(sem_path,pid_s);
-    sem_t *sem = sem_open(sem_path, O_CREAT, 0644, 1);
-    if (sem == SEM_FAILED) {
-        printf("Failed to open semaphore\n");
-        return -1;
-    }
 
     // Set server fifo path
     char fifo_server_path[64] = ""; 
@@ -71,6 +130,8 @@ int main()
         printf("ERROR : clientFifo couldn't be opened");
         return -1;
     }
+
+    /* Semaphores to synchorinize handle connection request proces and queue control process*/
     sem_t* sem1 = sem_open("/tmp/sem1", O_CREAT | O_EXCL, 0666, 0);
     if (sem1 < 0) {
         perror("sem_init");
@@ -85,7 +146,7 @@ int main()
     int opType = fork();
 
     /*Get server connection request and create child servers*/
-    if (opType == 0){
+    if (opType > 0){
         
         // Read data from the client via fd_server fifo
         while (1) {
@@ -120,7 +181,7 @@ int main()
                 //Response to connection request
                 sem_wait(sem2);
                 //If request is tryConnect and currentClientCount is full than reject
-                if(connectionType == 't' && currentClientCount == MAX_CLIENT){
+                if(connectionType == 't' && serverInfo->currentClientCount == MAX_CLIENT){
                     strcat(response,"ERROR : Server has been reached the maximum client!\n");
                     if(write(fd_client,response,strlen(response)) == -1){
                         printf("ERROR : Server connection response couldn't be writed");
@@ -129,14 +190,14 @@ int main()
                     printf("Client(%s) rejected\n",clientPid);
                 }
                 //If request is Connect and currentClientCount is full than put queue
-                else if(connectionType == 'c' && currentClientCount == MAX_CLIENT){
+                else if(connectionType == 'c' && serverInfo->currentClientCount == MAX_CLIENT){
                     strcat(response,"WARNING : Server has been reached the maximum client! You are in queue\n");
                     if(write(fd_client,response,strlen(response)) == -1){
                         printf("ERROR : Server connection response couldn't be writed");
                         return -1;
                     }
                     //Insert client queue
-                    enqueue(queue, clientPid);
+                    enqueue(serverInfo->queue, clientPid);
                     printf("Client(%s) inserted queue\n",clientPid);
                 }
                 //If currentClientCount is appropriate than approve
@@ -148,8 +209,8 @@ int main()
                     }
                     
                     printf("Client(%s) connected\n",clientPid);
-                    currentClientCount += 1;
-                    printf("Current client count : %d\n",currentClientCount);
+                    serverInfo->currentClientCount += 1;
+                    //printf("Current client count : %d\n",serverInfo->currentClientCount);
 
                 }
                 sem_post(sem1);
@@ -165,11 +226,11 @@ int main()
         while (1)
         {
             sem_wait(sem1);
-            if(isEmpty(queue) != 1 && currentClientCount < MAX_CLIENT){
-                char* clientPid = dequeue(queue);
+            if(isEmpty(serverInfo->queue) != 1 && serverInfo->currentClientCount < MAX_CLIENT){
+                char* clientPid = dequeue(serverInfo->queue);
                 printf("Client (%s) connected from queue\n",clientPid);
-                currentClientCount += 1;
-                printf("Current client count : %d\n",currentClientCount);
+                serverInfo->currentClientCount += 1;
+                //printf("Current client count : %d\n",serverInfo->currentClientCount);
                 free(clientPid);
             }else{
                 sem_post(sem2);
@@ -178,6 +239,7 @@ int main()
         
     }
     
+    close(shm_serverInfo_fd);
     close(fd_client);
     close(fd_server);
     unlink(fifo_server_path);
