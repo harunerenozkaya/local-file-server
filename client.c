@@ -35,8 +35,7 @@ void sig_handler(int signo){
         exit(1);
     }
     else if (signo == SIGTERM){
-        close_client_fifo(getpid());
-        exit(1);
+
     }
     else if (signo == SIGQUIT){
         close_client_fifo(getpid());

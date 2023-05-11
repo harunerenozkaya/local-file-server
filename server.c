@@ -8,6 +8,7 @@
 #include <semaphore.h>
 #include "queue.h"
 #include <sys/mman.h>
+#include <signal.h>
 
 #define FIFO_SERVER_PATH "/tmp/server_fifo"
 #define FIFO_CLIENT_PATH "/tmp/client_fifo"
@@ -224,15 +225,25 @@ int main()
     /*Control the queue and if it is okay then response the clients*/
     else{
         while (1)
-        {
+        {   
             sem_wait(sem1);
             if(isEmpty(serverInfo->queue) != 1 && serverInfo->currentClientCount < MAX_CLIENT){
                 char* clientPid = dequeue(serverInfo->queue);
-                printf("Client (%s) connected from queue\n",clientPid);
-                serverInfo->currentClientCount += 1;
-                //printf("Current client count : %d\n",serverInfo->currentClientCount);
+                int clientPidInt = atoi(clientPid);
+
+                //Control if the client is still waiting or exited
+                if (kill(clientPidInt, 15) == -1) {
+                    printf("Client (%s) was terminated while waiting. Extracting from queue\n",clientPid);
+                }
+                else{
+                    printf("Client (%s) connected from queue\n",clientPid);
+                    serverInfo->currentClientCount += 1;
+                    //printf("Current client count : %d\n",serverInfo->currentClientCount);
+                }
+
                 free(clientPid);
-            }else{
+            }
+            else{
                 sem_post(sem2);
             }
         }
