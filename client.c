@@ -6,12 +6,16 @@
 #include <sys/types.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/mman.h>
+#include <semaphore.h>
 
 #define FIFO_SERVER_PATH "/tmp/server_fifo"
 #define FIFO_CLIENT_PATH "/tmp/client_fifo"
-#define SHM_PATH "tmp/shm"
-#define SEM_PATH_SERVER "tmp/semServer"
-#define SEM_PATH_CLIENT "tmp/semClient"
+#define SEM_SERVERCLIENT_PATH "/tmp/sem_server_client"
+#define SHM_SERVERCLIENT_PATH "/tmp/shm_server_client"
+
+#define SHM_SERVERCLIENT_SIZE 1024*1024*100
+
 
 
 //TODO if client is waiting and ctcl-c send server to request to quit
@@ -29,9 +33,38 @@ void close_client_fifo(int pid){
     unlink(fifo_client_path);
 }
 
+void close_client_server_shm_sem(int pid){
+    /*Convert pid to char array */
+    char pid_s[32] = "";
+    snprintf(pid_s,32,"%d",pid);
+
+    //Set semaphore path
+    char sem_path[64] = ""; 
+    strcat(sem_path,SEM_SERVERCLIENT_PATH);
+    strcat(sem_path,pid_s);
+
+    //Set shared memory path
+    char shm_path[64] = ""; 
+    strcat(shm_path,SHM_SERVERCLIENT_PATH);
+    strcat(shm_path,pid_s);
+    
+    /* Remove shared memory segment */
+    if (shm_unlink(shm_path) == -1) {
+        perror("shm_unlink");
+        exit(1);
+    }
+    
+    /* Remove semaphore segment */
+    if (sem_unlink(sem_path) == -1) {
+        perror("sem_unlink");
+        exit(1);
+    }
+}
+
 void sig_handler(int signo){
     if (signo == SIGINT){
         close_client_fifo(getpid());
+        close_client_server_shm_sem(getpid());
         exit(1);
     }
     else if (signo == SIGTERM){
@@ -39,10 +72,12 @@ void sig_handler(int signo){
     }
     else if (signo == SIGQUIT){
         close_client_fifo(getpid());
+        close_client_server_shm_sem(getpid());
         exit(1);
     }
     else if (signo == SIGTSTP){
         close_client_fifo(getpid());
+        close_client_server_shm_sem(getpid());
         exit(1);
     }
 }
@@ -53,6 +88,7 @@ int main(int argc, char *argv[])
     int fd_client;
     char buf_read[256] = "";
     char buf_write[256] = "";
+    char connectionStatus[5] = "";
 
     //Determine signal handlers
     if (signal(SIGINT, sig_handler) == SIG_ERR)
@@ -125,31 +161,91 @@ int main(int argc, char *argv[])
     }
     fflush(stdout);
     
-    while(1){
-        ssize_t n = read(fd_client, buf_read, sizeof(buf_read));
-        if(n == -1){
-            printf("ERROR : Server response couldn't be read!");
-            return -1;
-        }
-        else if(n > 0){
-            char connectionStatus[5] = "";
-            
-            printf("%s",buf_read);
-
-            strncpy(connectionStatus,buf_read,5);
-            if(strcmp(connectionStatus,"ERROR") == 0)
-                return -1;
-            
-        }
-        //clear buffer
-        memset(connectData, 0, sizeof(connectData)); 
-        memset(buf_read, 0, sizeof(buf_read)); 
+    //Get response from server
+    ssize_t n = read(fd_client, buf_read, sizeof(buf_read));
+    if(n == -1){
+        printf("ERROR : Server response couldn't be read!");
+        return -1;
     }
 
+    //Get connection status and print response message        
+    printf("%s",buf_read);
+    strncpy(connectionStatus,buf_read,5);
+    
+    //clear buffer
+    memset(connectData, 0, sizeof(connectData)); 
+    memset(buf_read, 0, sizeof(buf_read)); 
+    
     /* Close the FIFO */
     close(fd_server);
     close(fd_client);
     unlink(fifo_client_path);
+
+    //If queue is full and it is ERROR than exit
+    if(strcmp(connectionStatus,"ERROR") == 0)
+        return -1;
+    
+    // Control if sem and shm is openend from server
+    // If it is not opened then wait , probably client is in queue
+
+    //Set semaphore path
+    char sem_path[64] = ""; 
+    strcat(sem_path,SEM_SERVERCLIENT_PATH);
+    strcat(sem_path,pid_s);
+
+    //Set shared memory path
+    char shm_path[64] = ""; 
+    strcat(shm_path,SHM_SERVERCLIENT_PATH);
+    strcat(shm_path,pid_s);
+
+    /* Semaphore to synchorinize handle operations between server and client*/
+    sem_t* sem = sem_open(sem_path, O_CREAT, 0666,1);
+    while (sem < 0) {
+        sem = sem_open(sem_path, O_CREAT, 0666,1);
+    }
+
+    /*Shared memory to communicate between server and client*/
+    int shm_fd = -1;
+    while(shm_fd < 0){
+        shm_fd = shm_open(shm_path, O_CREAT | O_RDWR, 0666);
+    }
+    char* shm_data = mmap(NULL, SHM_SERVERCLIENT_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if(shm_data < 0){
+        perror("Hata");
+    }
+
+    //Requests to server
+    while(1){
+        printf("bekliyor %s\n",pid_s);
+        sem_wait(sem);
+        sleep(1);
+        printf("işlem yapıyor\n");
+        sem_post(sem);
+    }
+
+    /* Unmap shared memory segment */
+    if (munmap(shm_data, SHM_SERVERCLIENT_SIZE) == -1) {
+        perror("munmap");
+        exit(1);
+    }
+    /* Close shared memory file descriptor */
+    if (close(shm_fd) == -1) {
+        perror("close");
+        exit(1);
+    }
+
+    /* Remove shared memory segment */
+    if (shm_unlink(shm_path) == -1) {
+        perror("shm_unlink");
+        exit(1);
+    }
+
+    /* Remove semaphore segment */
+    if (sem_unlink(sem_path) == -1) {
+        perror("sem_unlink");
+        exit(1);
+    }
+    
     
     return 0;
 }
