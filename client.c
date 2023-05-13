@@ -201,7 +201,7 @@ int main(int argc, char *argv[])
     /* Semaphore to synchorinize handle operations between server and client*/
     sem_t* sem = sem_open(sem_path,1);
     while (sem == SEM_FAILED) {
-        sem = sem_open(sem_path,0);
+        sem = sem_open(sem_path,1);
     }
 
     /* Shared memory to communicate between server and client */
@@ -219,6 +219,8 @@ int main(int argc, char *argv[])
 
     /* Requests to server */
     int isFirst = 1;
+    int requestLength = 0;
+
     while(1){
         char buffRequest[64];
 
@@ -227,20 +229,22 @@ int main(int argc, char *argv[])
             sem_wait(sem);
         }  
         
-        //Read request
-        printf("Enter command : ");
-        fflush(stdout);
-        int readStatus = read(0,buffRequest,sizeof(buffRequest));
-        if(readStatus == -1){
-            perror("ERROR : read() failed\n");
-        }
+        //Read request from user
+        do{
+            printf("Enter command : ");
+            fflush(stdout);
+            requestLength = read(0,buffRequest,sizeof(buffRequest));
+            if(requestLength == -1){
+                perror("ERROR : read() failed\n");
+            }
+        }while((requestLength-1) <= 0);
 
-        //write request to data    
+        //Write request to data
         shm_data[0] = '\0';     
-        sprintf(shm_data,"%d.%s",readStatus,buffRequest);
+        sprintf(shm_data,"%d.%s",requestLength,buffRequest);
         sem_post(sem);
 
-        //Get response
+        //Get response from data
         sem_wait(sem);
         printf("%s",shm_data);
         fflush(stdout);

@@ -221,7 +221,7 @@ void run_child_server(char* pid){
 
         /* Semaphore to synchorinize handle operations between server and client*/
         sem_t* sem = sem_open(sem_path, O_CREAT, 0666, 1);
-        if (sem < 0) {
+        if (sem == SEM_FAILED) {
             perror("ERROR : Shared memory for communication between server and client");
             exit(1);
         }
@@ -246,7 +246,6 @@ void run_child_server(char* pid){
             exit(1);
         }
 
-        sleep(1);
 
         /* Join main loop */
         while(1){
@@ -261,13 +260,61 @@ void run_child_server(char* pid){
             printTokens(tokens,tokenCount);
 
             /*Handle request*/
+            if(tokenCount > 0){
+                if(strcmp(tokens[0],"help") == 0){
+                    if(tokenCount == 1){
+                        /* Write help response */
+                        shm_data[0] = '\0'; 
+                        sprintf(shm_data,"%s","Available comments are : \nhelp, list, readF, writeT, upload, download, quit, killServer\n");
+                    }
+                    else {
+                        /* Write response */
+                        shm_data[0] = '\0'; 
+                        sprintf(shm_data,"%s","received : list\n");
+                    }
+                }
+                else if(strcmp(tokens[0],"list") == 0){
+                    /* Write response */
+                    shm_data[0] = '\0'; 
+                    sprintf(shm_data,"%s","received : list\n");
+                }
+                else if(strcmp(tokens[0],"readF") == 0){
+                    /* Write response */
+                    shm_data[0] = '\0'; 
+                    sprintf(shm_data,"%s","received : readF\n");
+                }
+                else if(strcmp(tokens[0],"writeT") == 0){
+                    /* Write response */
+                    shm_data[0] = '\0'; 
+                    sprintf(shm_data,"%s","received : writeT\n");
+                }
+                else if(strcmp(tokens[0],"upload") == 0){
+                    /* Write response */
+                    shm_data[0] = '\0'; 
+                    sprintf(shm_data,"%s","received : upload\n");
+                }
+                else if(strcmp(tokens[0],"download") == 0){
+                    /* Write response */
+                    shm_data[0] = '\0'; 
+                    sprintf(shm_data,"%s","received : download\n");
+                }
+                else if(strcmp(tokens[0],"quit") == 0){
+                    /* Write response */
+                    shm_data[0] = '\0'; 
+                    sprintf(shm_data,"%s","received : quit\n");
+                }
+                else if(strcmp(tokens[0],"killServer") == 0){
+                    /* Write response */
+                    shm_data[0] = '\0'; 
+                    sprintf(shm_data,"%s","received : killServer\n");
+                }
+                else{
+                    /* Write response */
+                    shm_data[0] = '\0'; 
+                    sprintf(shm_data,"%s","Not correct command!\n");
+                }
+            }
             
-
-            /* Write request */
-            shm_data[0] = '\0'; 
-            sprintf(shm_data,"%s","aleyküm selam\n");
-
-
             //Free tokens
             freeTokens(tokens, tokenCount);
 
