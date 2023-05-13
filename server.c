@@ -67,7 +67,145 @@ void sig_handler(int signo){
     }
 }
 
-void create_child_server(char* pid){
+/**
+ * The function takes a string and returns the length of the substring before the first occurrence of
+ * the dot character, converted to an integer and decremented by 1.
+ * 
+ * @param str A pointer to a string that represents a request. The request is expected to have a number
+ * followed by a dot character as its first substring. The function extracts this number and returns it
+ * as an integer.
+ * 
+ * @return an integer value which represents the length of the substring before the first occurrence of
+ * the dot character in the input string, minus one.
+ */
+int getRequestLength(char *str) {
+    char *dot_ptr = strchr(str, '.'); // Find the first occurrence of the dot character
+    if (dot_ptr == NULL) { // If the dot character is not found, return 0
+        return 0;
+    }
+    int len = dot_ptr - str; // Calculate the length of the substring before the dot
+    char *int_str = malloc(len + 1); // Allocate memory for the integer string
+    strncpy(int_str, str, len); // Copy the substring before the dot into the integer string
+    int_str[len] = '\0'; // Null-terminate the integer string
+    int result = atoi(int_str); // Convert the integer string to an integer
+    free(int_str); // Free the memory allocated for the integer string
+    return result-1;
+}
+
+/**
+ * The function deletes the substring after the first occurrence of the dot character in a given
+ * string.
+ * 
+ * @param str a pointer to a character array (string) that contains a dot character '.' and possibly
+ * other characters after it.
+ * 
+ * @return If the dot character is not found in the input string, the function returns without doing
+ * anything. If the dot character is found, the function removes the substring after the dot and moves
+ * the remaining characters to the beginning of the string. The function does not return anything.
+ */
+void deleteLengthPart(char *str) {
+    char *dot_ptr = strchr(str, '.'); // Find the first occurrence of the dot character
+    if (dot_ptr == NULL) { // If the dot character is not found, do nothing
+        return;
+    }
+    int len = strlen(dot_ptr); // Calculate the length of the substring after the dot
+    memmove(str, dot_ptr + 1, len); // Move the substring after the dot to the beginning of the string
+}
+
+/**
+ * The function takes a string and tokenizes it into an array of strings based on spaces.
+ * 
+ * @param request The request string that needs to be tokenized.
+ * @param tokens The "tokens" parameter is a pointer to a pointer to a char array. This function will
+ * allocate memory for an array of char pointers and assign it to the memory location pointed to by
+ * "tokens". The array will contain the individual tokens parsed from the "request" string.
+ * 
+ * @return The function `tokenizeRequest` is returning an integer value which represents the number of
+ * tokens in the request string.
+ */
+int tokenizeRequest(char* request, char*** tokens) {
+    int tokenCount = 0;
+    char* token;
+    char** tokenArray = NULL;
+    
+    token = strtok(request, " ");
+    while (token != NULL) {
+        tokenArray = (char**)realloc(tokenArray, sizeof(char*) * (tokenCount + 1));
+        tokenArray[tokenCount] = (char*)malloc(strlen(token) + 1);
+        strcpy(tokenArray[tokenCount], token);
+        tokenCount++;
+        token = strtok(NULL, " ");
+    }
+    
+    *tokens = tokenArray;
+    return tokenCount;
+}
+
+/**
+ * The function `printTokens` prints an array of strings and its length.
+ * 
+ * @param tokens tokens is a pointer to an array of strings (char**), where each string represents a
+ * token.
+ * @param tokenCount The parameter `tokenCount` is an integer that represents the number of tokens in
+ * the `tokens` array.
+ */
+void printTokens(char** tokens, int tokenCount) {
+    printf("tokens = [");
+    for (int i = 0; i < tokenCount; i++) {
+        printf("\"%s\"", tokens[i]);
+        if (i < tokenCount - 1) {
+            printf(",");
+        }
+    }
+    printf("]\n");
+    
+    printf("tokenCount = %d\n", tokenCount);
+}
+
+/**
+ * The function frees memory allocated for an array of tokens.
+ * 
+ * @param tokens tokens is a pointer to a pointer of characters (i.e. a pointer to a string array).
+ * @param tokenCount The parameter `tokenCount` is an integer that represents the number of tokens in
+ * the `tokens` array.
+ */
+void freeTokens(char** tokens, int tokenCount) {
+    for (int i = 0; i < tokenCount; i++) {
+        free(tokens[i]);
+    }
+    free(tokens);
+}
+
+/**
+ * This function reads a request from shared memory, removes the length part, tokenizes the request,
+ * and returns the number of tokens.
+ * 
+ * @param shm_data A pointer to a shared memory segment that contains the request data.
+ * @param tokens a pointer to a char** variable that will hold the tokens of the parsed request
+ * @param tokenCount a pointer to an integer variable that will store the number of tokens in the
+ * request after it has been tokenized.
+ */
+void readRequest(char* shm_data, char*** tokens, int* tokenCount) {
+    int requestLength;
+
+    //Get request length by parsing wrote request length at start
+    requestLength = getRequestLength(shm_data);
+
+    //Delete length part from request
+    deleteLengthPart(shm_data);
+
+    //Parse part of just in length
+    char* requestWithoutNoise = strndup(shm_data, requestLength);
+
+    //Tokenize the request
+    *tokenCount = tokenizeRequest(requestWithoutNoise, tokens);
+
+    // Free memory
+    free(requestWithoutNoise);
+}
+
+
+void run_child_server(char* pid){
    int child = fork();
     if(child == 0){
         //Set semaphore path
@@ -107,15 +245,32 @@ void create_child_server(char* pid){
             perror("ERROR : Shared memory couldn't be mapped");
             exit(1);
         }
+
         sleep(1);
+
+        /* Join main loop */
         while(1){
             fflush(stdout);
+
             sem_wait(sem);
-            //Read request
-            printf("%s",shm_data);
-            //Write request
+
+            /*Read request*/
+            char** tokens = NULL;
+            int tokenCount = 0;
+            readRequest(shm_data, &tokens, &tokenCount);
+            printTokens(tokens,tokenCount);
+
+            /*Handle request*/
+            
+
+            /* Write request */
             shm_data[0] = '\0'; 
             sprintf(shm_data,"%s","aleyküm selam\n");
+
+
+            //Free tokens
+            freeTokens(tokens, tokenCount);
+
             sem_post(sem);
         }
         
@@ -298,7 +453,7 @@ int main()
                     serverInfo->currentClientCount += 1;
                     //printf("Current client count : %d\n",serverInfo->currentClientCount);
 
-                    create_child_server(clientPid);
+                    run_child_server(clientPid);
                 }
                 sem_post(semMain);
                 fflush(stdout);
@@ -325,7 +480,7 @@ int main()
                     printf("Client (%s) connected from queue\n",clientPid);
                     serverInfo->currentClientCount += 1;
                     //printf("Current client count : %d\n",serverInfo->currentClientCount);
-                    create_child_server(clientPid);
+                    run_child_server(clientPid);
                 }
 
                 free(clientPid);
