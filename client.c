@@ -249,6 +249,11 @@ int main(int argc, char *argv[])
         printf("%s",shm_data);
         fflush(stdout);
 
+        if(strcmp(shm_data,"Quitting...\n") == 0){
+            sem_post(sem);
+            break;
+        }
+
         //Make isFirst 0 to dont turn server
         if (isFirst == 1){
             isFirst = 0;
@@ -258,26 +263,21 @@ int main(int argc, char *argv[])
     /* Unmap shared memory segment */
     if (munmap(shm_data, SHM_SERVERCLIENT_SIZE) == -1) {
         perror("munmap");
-        exit(1);
     }
     /* Close shared memory file descriptor */
     if (close(shm_fd) == -1) {
         perror("close");
-        exit(1);
     }
 
     /* Remove shared memory segment */
     if (shm_unlink(shm_path) == -1) {
         perror("shm_unlink");
-        exit(1);
     }
 
     /* Remove semaphore segment */
     if (sem_unlink(sem_path) == -1) {
         perror("sem_unlink");
-        exit(1);
     }
-    
     
     return 0;
 }

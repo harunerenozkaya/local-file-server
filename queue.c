@@ -4,11 +4,11 @@
 #include "queue.h"
 
 /* Function to create an empty queue */
-queue_t* createQueue() {
+queue_t createQueue() {
     queue_t* queue = (queue_t*)malloc(sizeof(queue_t));
     queue->front = NULL;
     queue->rear = NULL;
-    return queue;
+    return (*queue);
 }
 
 /* Function to check if the queue is empty */
@@ -50,7 +50,7 @@ char* dequeue(queue_t* queue) {
     if (queue->front == NULL) {
         queue->rear = NULL;
     }
-
+    
     return data;
 }
 

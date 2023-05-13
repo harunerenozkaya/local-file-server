@@ -14,7 +14,7 @@ struct Queue {
 typedef struct Queue queue_t;
 typedef struct QueueNode node_t;
 
-queue_t* createQueue();
+queue_t createQueue();
 int isEmpty(queue_t* queue);
 void enqueue(queue_t* queue, char* data);
 char* dequeue(queue_t* queue);

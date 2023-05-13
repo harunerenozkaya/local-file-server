@@ -23,8 +23,9 @@
 // Shared memory struct
 typedef struct {
     int currentClientCount;
-    queue_t* queue;
+    queue_t queue;
 } shared_serverInfo_t;
+
 
 void close_server_fifo(int pid){
     //Convert pid to char array 
@@ -259,7 +260,7 @@ void handleHelp(char** tokens, int tokenCount, char* shm_data) {
 
 
 
-void run_child_server(char* pid){
+void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMain){
    int child = fork();
     if(child == 0){
         //Set semaphore path
@@ -311,7 +312,7 @@ void run_child_server(char* pid){
             char** tokens = NULL;
             int tokenCount = 0;
             readRequest(shm_data, &tokens, &tokenCount);
-            printTokens(tokens,tokenCount);
+            //printTokens(tokens,tokenCount);
 
             shm_data[0] = '\0';
 
@@ -323,43 +324,34 @@ void run_child_server(char* pid){
                     handleHelp(tokens, tokenCount, shm_data);
 
                 else if(strcmp(tokens[0],"list") == 0){
-                    /* Write response */
-                    shm_data[0] = '\0'; 
                     sprintf(shm_data,"%s","received : list\n");
                 }
                 else if(strcmp(tokens[0],"readF") == 0){
-                    /* Write response */
-                    shm_data[0] = '\0'; 
                     sprintf(shm_data,"%s","received : readF\n");
                 }
                 else if(strcmp(tokens[0],"writeT") == 0){
-                    /* Write response */
-                    shm_data[0] = '\0'; 
                     sprintf(shm_data,"%s","received : writeT\n");
                 }
                 else if(strcmp(tokens[0],"upload") == 0){
-                    /* Write response */
-                    shm_data[0] = '\0'; 
                     sprintf(shm_data,"%s","received : upload\n");
                 }
                 else if(strcmp(tokens[0],"download") == 0){
-                    /* Write response */
-                    shm_data[0] = '\0'; 
                     sprintf(shm_data,"%s","received : download\n");
                 }
                 else if(strcmp(tokens[0],"quit") == 0){
-                    /* Write response */
-                    shm_data[0] = '\0'; 
-                    sprintf(shm_data,"%s","received : quit\n");
+                    sprintf(shm_data,"%s","Quitting...\n");
+
+                    sem_post(sem);
+
+                    //Free tokens
+                    freeTokens(tokens, tokenCount);
+
+                    break;
                 }
                 else if(strcmp(tokens[0],"killServer") == 0){
-                    /* Write response */
-                    shm_data[0] = '\0'; 
-                    sprintf(shm_data,"%s","received : killServer\n");
+                    sprintf(shm_data,"%s","Quitting...\n");
                 }
                 else{
-                    /* Write response */
-                    shm_data[0] = '\0'; 
                     sprintf(shm_data,"%s","Not correct command!\n");
                 }
             }
@@ -369,34 +361,64 @@ void run_child_server(char* pid){
 
             sem_post(sem);
         }
-        
 
+        
         /* Unmap shared memory segment */
         if (munmap(shm_data, SHM_SERVERCLIENT_SIZE) == -1) {
             perror("munmap");
-            exit(1);
         }
         /* Close shared memory file descriptor */
         if (close(shm_fd) == -1) {
             perror("close");
-            exit(1);
         }
 
         /* Remove shared memory segment */
         if (shm_unlink(shm_path) == -1) {
             perror("shm_unlink");
-            exit(1);
         }
 
         /* Remove semaphore segment */
         if (sem_unlink(sem_path) == -1) {
             perror("sem_unlink");
-            exit(1);
         }
 
-        exit(1);
+        //Decrease current client count
+        sem_wait(semMain);
+        serverInfo->currentClientCount -= 1;
+        sem_post(semMain);
+
+        exit(0);
     }
 }
+
+/**
+ * The function processes the queue of client PIDs and runs the child server for the next client if
+ * there is space and the client is still waiting.
+ * 
+ * @param serverInfo A pointer to a shared_serverInfo_t struct, which contains information about the
+ * server and its clients.
+ * @param semMain The parameter `semMain` is a pointer to a semaphore variable that is used for
+ * synchronization between different processes. It is likely used to ensure that only one process is
+ * accessing a shared resource (such as the serverInfo struct) at a time.
+ */
+void processQueue(shared_serverInfo_t* serverInfo, sem_t* semMain) {
+    if(isEmpty(&(serverInfo->queue)) != 1 && serverInfo->currentClientCount < MAX_CLIENT){
+        char* clientPid = dequeue(&(serverInfo->queue));
+        int clientPidInt = atoi(clientPid);
+        //Control if the client is still waiting or exited
+        if (kill(clientPidInt, 15) == -1) {
+            printf("Client (%s) was terminated while waiting. Extracting from queue\n",clientPid);
+        }
+        else{
+            printf("Client (%s) connected from queue\n",clientPid);
+            serverInfo->currentClientCount += 1;
+            printf("Current client count : %d\n",serverInfo->currentClientCount);
+            run_child_server(clientPid,serverInfo,semMain);
+        }
+        free(clientPid);
+    }
+}
+
 
 int main()
 {   
@@ -441,10 +463,6 @@ int main()
     serverInfo->currentClientCount = 0;
     serverInfo->queue = createQueue();
 
-    enqueue(serverInfo->queue,"1111");
-    enqueue(serverInfo->queue,"2222");
-    enqueue(serverInfo->queue,"3333");
-
     //Convert pid to char array 
     int pid = getpid();
     char pid_s[32] = "";
@@ -480,112 +498,80 @@ int main()
         exit(1);
     }
 
-    int opType = fork();
 
-    /*Get server connection request and create child servers*/
-    if (opType > 0){
+    // Read data from the client via fd_server fifo
+    while (1) {
+        //Control queue and process the connection requests
+        processQueue(serverInfo,semMain);
+
+        ssize_t n = read(fd_server, buf_read, sizeof(buf_read));
         
-        // Read data from the client via fd_server fifo
-        while (1) {
-            ssize_t n = read(fd_server, buf_read, sizeof(buf_read));
+        if(n == -1){
+            printf("ERROR : clientFifo couldn't be read!");
+        } 
+        else if (n > 0) {
+            char response[128] = "";
+
+            char connectionType = buf_read[strlen(buf_read)-1];
+            buf_read[strlen(buf_read) -1] = '\0';
+            char* clientPid = buf_read;
+
+            // Set client fifo path and open client fifo
+            char fifo_client_path[64] = ""; 
+            strcat(fifo_client_path,FIFO_CLIENT_PATH);
+            strcat(fifo_client_path,clientPid);
+
+            // Open clientFifo thanks to clientPID in the request
+            fd_client = open(fifo_client_path, O_RDWR);
+            if(fd_client == -1){
+                printf("ERROR : clientFifo couldn't be opened");
+                return -1;
+            }
+
+            //Response to connection request
+            sem_wait(semMain);
             
-            if(n == -1){
-                printf("ERROR : clientFifo couldn't be read!");
-            } 
-            else if (n > 0) {
-                char response[128] = "";
-
-                char connectionType = buf_read[strlen(buf_read)-1];
-                buf_read[strlen(buf_read) -1] = '\0';
-                char* clientPid = buf_read;
-
-                // Set client fifo path and open client fifo
-                char fifo_client_path[64] = ""; 
-                strcat(fifo_client_path,FIFO_CLIENT_PATH);
-                strcat(fifo_client_path,clientPid);
-
-                //printf("%c",connectionType);
-                //printf("Received data: %s\n", clientPid);
-                //printf("FIFO_CLIENT_PATH : %s\n",fifo_client_path);
-
-                // Open clientFifo thanks to clientPID in the request
-                fd_client = open(fifo_client_path, O_RDWR);
-                if(fd_client == -1){
-                    printf("ERROR : clientFifo couldn't be opened");
+            //If request is tryConnect and currentClientCount is full than reject
+            if(connectionType == 't' && serverInfo->currentClientCount == MAX_CLIENT){
+                strcat(response,"ERROR : Server has been reached the maximum client!\n");
+                if(write(fd_client,response,strlen(response)) == -1){
+                    printf("ERROR : Server connection response couldn't be writed");
+                    return -1;
+                }        
+                printf("Client(%s) rejected\n",clientPid);
+            }
+            //If request is Connect and currentClientCount is full than put queue
+            else if(connectionType == 'c' && serverInfo->currentClientCount == MAX_CLIENT){
+                strcat(response,"WARNING : Server has been reached the maximum client! You are in queue\n");
+                if(write(fd_client,response,strlen(response)) == -1){
+                    printf("ERROR : Server connection response couldn't be writed");
                     return -1;
                 }
-
-                //Response to connection request
-                sem_wait(semMain);
-                //If request is tryConnect and currentClientCount is full than reject
-                if(connectionType == 't' && serverInfo->currentClientCount == MAX_CLIENT){
-                    strcat(response,"ERROR : Server has been reached the maximum client!\n");
-                    if(write(fd_client,response,strlen(response)) == -1){
-                        printf("ERROR : Server connection response couldn't be writed");
-                        return -1;
-                    }        
-                    printf("Client(%s) rejected\n",clientPid);
-                }
-                //If request is Connect and currentClientCount is full than put queue
-                else if(connectionType == 'c' && serverInfo->currentClientCount == MAX_CLIENT){
-                    strcat(response,"WARNING : Server has been reached the maximum client! You are in queue\n");
-                    if(write(fd_client,response,strlen(response)) == -1){
-                        printf("ERROR : Server connection response couldn't be writed");
-                        return -1;
-                    }
-                    //Insert client queue
-                    enqueue(serverInfo->queue, clientPid);
-                    printf("Client(%s) inserted queue\n",clientPid);
-                }
-                //If currentClientCount is appropriate than approve
-                else{
-                    strcat(response,"SUCCESS : Connection established\n");
-                    if(write(fd_client,response,strlen(response)) == -1){
-                        printf("ERROR : Server connection response couldn't be writed");
-                        return -1;
-                    }
-                    
-                    printf("Client(%s) connected\n",clientPid);
-                    serverInfo->currentClientCount += 1;
-                    //printf("Current client count : %d\n",serverInfo->currentClientCount);
-
-                    run_child_server(clientPid);
-                }
-                sem_post(semMain);
-                fflush(stdout);
+                //Insert client queue
+                enqueue(&(serverInfo->queue), clientPid);
+                printf("Client(%s) inserted queue\n",clientPid);
+                //printQueue(&(serverInfo->queue));
             }
-            
-            //clear buffer
-            memset(buf_read, 0, sizeof(buf_read));  
-        }
-    }
-    /*Control the queue and if it is okay then response the clients*/
-    else{
-        while (1)
-        {   
-            sem_wait(semMain);
-            if(isEmpty(serverInfo->queue) != 1 && serverInfo->currentClientCount < MAX_CLIENT){
-                char* clientPid = dequeue(serverInfo->queue);
-                int clientPidInt = atoi(clientPid);
-
-                //Control if the client is still waiting or exited
-                if (kill(clientPidInt, 15) == -1) {
-                    printf("Client (%s) was terminated while waiting. Extracting from queue\n",clientPid);
-                }
-                else{
-                    printf("Client (%s) connected from queue\n",clientPid);
-                    serverInfo->currentClientCount += 1;
-                    //printf("Current client count : %d\n",serverInfo->currentClientCount);
-                    run_child_server(clientPid);
-                }
-
-                free(clientPid);
-            }
+            //If currentClientCount is appropriate than approve
             else{
-                sem_post(semMain);
+                strcat(response,"SUCCESS : Connection established\n");
+                if(write(fd_client,response,strlen(response)) == -1){
+                    printf("ERROR : Server connection response couldn't be writed");
+                    return -1;
+                }
+                
+                printf("Client(%s) connected\n",clientPid);
+                serverInfo->currentClientCount += 1;
+                //printf("Current client count : %d\n",serverInfo->currentClientCount);
+                //printQueue(&(serverInfo->queue));
+                run_child_server(clientPid,serverInfo,semMain);
             }
+            sem_post(semMain);
+            fflush(stdout);
         }
         
+        //clear buffer
+        memset(buf_read, 0, sizeof(buf_read));  
     }
     
     close(shm_serverInfo_fd);
