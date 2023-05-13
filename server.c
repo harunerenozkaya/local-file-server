@@ -70,18 +70,16 @@ void sig_handler(int signo){
 void create_child_server(char* pid){
    int child = fork();
     if(child == 0){
-        char* shm_data;
-
         //Set semaphore path
         char sem_path[64] = ""; 
         strcat(sem_path,SEM_SERVERCLIENT_PATH);
         strcat(sem_path,pid);
 
+        //Set shared memory path
         char shm_path[64] = ""; 
         strcat(shm_path,SHM_SERVERCLIENT_PATH);
         strcat(shm_path,pid);
-
-        //Set shared memory path
+        
 
         /* Semaphore to synchorinize handle operations between server and client*/
         sem_t* sem = sem_open(sem_path, O_CREAT, 0666, 1);
@@ -91,7 +89,7 @@ void create_child_server(char* pid){
         }
 
         /*Shared memory to communicate between server and client*/
-        int shm_fd = shm_open(shm_path, O_CREAT | O_RDWR, 0666);
+        int shm_fd = shm_open(shm_path, O_CREAT | O_RDWR | O_TRUNC, 0666);
         if (shm_fd == -1) {
             perror("ERROR : Shared memory for communication between server and client");
             exit(1);
@@ -104,18 +102,20 @@ void create_child_server(char* pid){
         }
 
         // Map shared memory into the address space of the parent and child processes
-        shm_data = mmap(NULL, SHM_SERVERCLIENT_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        char* shm_data = mmap(NULL, SHM_SERVERCLIENT_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
         if (shm_data == MAP_FAILED) {
             perror("ERROR : Shared memory couldn't be mapped");
             exit(1);
         }
-        
-        //Response client requests
+        sleep(1);
         while(1){
-            printf("bekliyor %s\n",pid);
+            fflush(stdout);
             sem_wait(sem);
-            sleep(3);
-            printf("işlem yapıyor\n");
+            //Read request
+            printf("%s",shm_data);
+            //Write request
+            shm_data[0] = '\0'; 
+            sprintf(shm_data,"%s","aleyküm selam\n");
             sem_post(sem);
         }
         

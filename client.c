@@ -199,28 +199,56 @@ int main(int argc, char *argv[])
     strcat(shm_path,pid_s);
 
     /* Semaphore to synchorinize handle operations between server and client*/
-    sem_t* sem = sem_open(sem_path,0);
+    sem_t* sem = sem_open(sem_path,1);
     while (sem == SEM_FAILED) {
         sem = sem_open(sem_path,0);
     }
 
-    /*Shared memory to communicate between server and client*/
+    /* Shared memory to communicate between server and client */
     int shm_fd = -1;
-    while(shm_fd < 0){
-        shm_fd = shm_open(shm_path, O_CREAT | O_RDWR, 0666);
+    while(shm_fd == -1){
+        shm_fd = shm_open(shm_path, O_RDWR, 0666);
     }
+    printf("\n");
+
+    /* Map shared memory into the address space of the parent and child processes */
     char* shm_data = mmap(NULL, SHM_SERVERCLIENT_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if(shm_data < 0){
-        perror("Hata");
+        perror("Error : shared memory mmap");
     }
 
-    //Requests to server
+    /* Requests to server */
+    int isFirst = 1;
     while(1){
-        printf("bekliyor %s\n",pid_s);
-        sem_wait(sem);
-        sleep(1);
-        printf("işlem yapıyor\n");
+        char buffRequest[64];
+
+        //Other than first request dont give turn server
+        if (isFirst == 1){
+            sem_wait(sem);
+        }  
+        
+        //Read request
+        printf("Enter command : ");
+        fflush(stdout);
+        int readStatus = read(0,buffRequest,sizeof(buffRequest));
+        if(readStatus == -1){
+            perror("ERROR : read() failed\n");
+        }
+
+        //write request to data    
+        shm_data[0] = '\0';     
+        sprintf(shm_data,"%d.%s",readStatus,buffRequest);
         sem_post(sem);
+
+        //Get response
+        sem_wait(sem);
+        printf("%s",shm_data);
+        fflush(stdout);
+
+        //Make isFirst 0 to dont turn server
+        if (isFirst == 1){
+            isFirst = 0;
+        }  
     }
 
     /* Unmap shared memory segment */
