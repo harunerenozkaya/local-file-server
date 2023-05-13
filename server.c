@@ -204,6 +204,60 @@ void readRequest(char* shm_data, char*** tokens, int* tokenCount) {
     free(requestWithoutNoise);
 }
 
+/**
+ * The function handles help requests by providing information on available commands and their usage.
+ * 
+ * @param tokens An array of strings containing the command and its arguments, split by spaces.
+ * @param tokenCount The number of tokens (or arguments) passed to the function.
+ * @param shm_data A pointer to a shared memory segment where the response message will be written.
+ */
+void handleHelp(char** tokens, int tokenCount, char* shm_data) {
+    /* Write help response */
+    if (tokenCount == 1) {
+        sprintf(shm_data, "%s", "Available comments are : \nhelp, list, readF, writeT, upload, download, quit, killServer\n");
+    }
+    /* Write help response for specific command*/
+    else {
+        //help help
+        if (strcmp(tokens[1], "help") == 0) {
+            sprintf(shm_data, "%s", "Usage : help or help <command>\n\thelp command give information about how <command> run and what <command> do.\n");
+        }
+        //help list
+        else if (strcmp(tokens[1], "list") == 0) {
+            sprintf(shm_data, "%s", "Usage : list \n\tlist command lists the files in the server directory\n");
+        }
+        //help readF
+        else if (strcmp(tokens[1], "readF") == 0) {
+            sprintf(shm_data, "%s", "Usage : readF <file> <line #> \n\treadF command displays the #th line of the <file>, returns with an error if <file> does not exists\n\tif no line number is given the whole contents of the file is requested\n");
+        }
+        //help writeT
+        else if (strcmp(tokens[1], "writeT") == 0) {
+            sprintf(shm_data, "%s", "Usage : writeT <file> <line #> <string> \n\twrite command writes the content of “string” to the  #th  line the <file>, \n\tif the line # is not given writes to the end of file\n");
+        }
+        //help upload
+        else if (strcmp(tokens[1], "upload") == 0) {
+            sprintf(shm_data, "%s", "Usage : upload <file> \n\tupload command uploads the <file> from the current working directory of client to the server's directory\n");
+        }
+        //help download
+        else if (strcmp(tokens[1], "download") == 0) {
+            sprintf(shm_data, "%s", "Usage : download <file> \n\tdownload command downloads the <file> from the server's directory to the current working directory of client\n");
+        }
+        //help quit
+        else if (strcmp(tokens[1], "quit") == 0) {
+            sprintf(shm_data, "%s", "Usage : quit \n\tquit command quits client and request server save log file\n");
+        }
+        //help killServer
+        else if (strcmp(tokens[1], "killServer") == 0) {
+            sprintf(shm_data, "%s", "Usage : killServer \n\tquit command kill the server and quit\n");
+        }
+        //help undefined
+        else {
+            sprintf(shm_data, "%s", "Not correct command!\n");
+        }
+    }
+}
+
+
 
 void run_child_server(char* pid){
    int child = fork();
@@ -259,20 +313,15 @@ void run_child_server(char* pid){
             readRequest(shm_data, &tokens, &tokenCount);
             printTokens(tokens,tokenCount);
 
-            /*Handle request*/
+            shm_data[0] = '\0';
+
+            /*Handle requests*/
             if(tokenCount > 0){
-                if(strcmp(tokens[0],"help") == 0){
-                    if(tokenCount == 1){
-                        /* Write help response */
-                        shm_data[0] = '\0'; 
-                        sprintf(shm_data,"%s","Available comments are : \nhelp, list, readF, writeT, upload, download, quit, killServer\n");
-                    }
-                    else {
-                        /* Write response */
-                        shm_data[0] = '\0'; 
-                        sprintf(shm_data,"%s","received : list\n");
-                    }
-                }
+
+                /*Handle help request*/
+                if(strcmp(tokens[0],"help") == 0)
+                    handleHelp(tokens, tokenCount, shm_data);
+
                 else if(strcmp(tokens[0],"list") == 0){
                     /* Write response */
                     shm_data[0] = '\0'; 
