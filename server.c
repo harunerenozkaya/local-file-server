@@ -261,7 +261,7 @@ void handleHelp(char** tokens, int tokenCount, char* shm_data) {
 
 
 
-void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMain){
+void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMain , char serverDirectory[MAX_PATH_LENGTH]){
    int child = fork();
     if(child == 0){
         //Set semaphore path
@@ -301,7 +301,6 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
             perror("ERROR : Shared memory couldn't be mapped");
             exit(1);
         }
-
 
         /* Join main loop */
         while(1){
@@ -409,7 +408,7 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
  * synchronization between different processes. It is likely used to ensure that only one process is
  * accessing a shared resource (such as the serverInfo struct) at a time.
  */
-void processQueue(shared_serverInfo_t* serverInfo, sem_t* semMain ,int maxClientCount) {
+void processQueue(shared_serverInfo_t* serverInfo, sem_t* semMain ,int maxClientCount,char serverDirectory[MAX_PATH_LENGTH]) {
     if(isEmpty(&(serverInfo->queue)) != 1 && serverInfo->currentClientCount < maxClientCount){
         char* clientPid = dequeue(&(serverInfo->queue));
         int clientPidInt = atoi(clientPid);
@@ -421,7 +420,7 @@ void processQueue(shared_serverInfo_t* serverInfo, sem_t* semMain ,int maxClient
             printf("Client (%s) connected from queue\n",clientPid);
             serverInfo->currentClientCount += 1;
             printf("Current client count : %d\n",serverInfo->currentClientCount);
-            run_child_server(clientPid,serverInfo,semMain);
+            run_child_server(clientPid,serverInfo,semMain,serverDirectory);
         }
         free(clientPid);
     }
@@ -546,6 +545,17 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    /***************************
+    ** Server started message **
+    ****************************/
+   
+    printf("Server Started PID : %d\n",pid);
+    printf("Waiting for clients...\n");
+
+    /**************
+    ** Open fifo **
+    ***************/
+
     // Open the server FIFO for reading 
     fd_server = open(fifo_server_path, O_RDONLY);
     if(fd_server == -1){
@@ -564,12 +574,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    /***************************
-    ** Server started message **
-    ****************************/
-   
-    printf("Server Started PID : %d\n",pid);
-    printf("Waiting for clients...\n");
+    
 
     /**************
     ** Main loop **
@@ -578,7 +583,7 @@ int main(int argc, char *argv[])
     // Read data from the client via fd_server fifo
     while (1) {
         //Control queue and process the connection requests
-        processQueue(serverInfo,semMain,maxClientCount);
+        processQueue(serverInfo,semMain,maxClientCount,serverDirectory);
 
         ssize_t n = read(fd_server, buf_read, sizeof(buf_read));
         
@@ -640,7 +645,7 @@ int main(int argc, char *argv[])
                 serverInfo->currentClientCount += 1;
                 //printf("Current client count : %d\n",serverInfo->currentClientCount);
                 //printQueue(&(serverInfo->queue));
-                run_child_server(clientPid,serverInfo,semMain);
+                run_child_server(clientPid,serverInfo,semMain,serverDirectory);
             }
             sem_post(semMain);
             fflush(stdout);
