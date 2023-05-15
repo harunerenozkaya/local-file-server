@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 #include <signal.h>
 #include "file_operations.h"
+#include <dirent.h>
 
 #define FIFO_SERVER_PATH "/tmp/server_fifo"
 #define FIFO_CLIENT_PATH "/tmp/client_fifo"
@@ -296,6 +297,45 @@ void handleUpload(char* serverDirectory, char* tokens[], sem_t* sem, char* shm_d
     free(fileName);
 }
 
+/**
+ * The function lists the contents of a directory and appends the names of the files to a shared memory
+ * data buffer.
+ * 
+ * @param path The path parameter is a string that represents the directory path that needs to be
+ * listed.
+ * @param shm_data The parameter `shm_data` is a pointer to a character array (string) that will be
+ * used to store the names of the files and directories in the specified path. The function will append
+ * each name to this string, separated by a newline character.
+ * 
+ * @return There is no return value in this function. It is a void function, which means it does not
+ * return anything.
+ */
+void handleList(const char* path, char* shm_data) {
+    DIR* directory;
+    struct dirent* entry;
+
+    char* dir = malloc(strlen(path) + 1);
+    sprintf(dir,"%s/",path);
+
+    directory = opendir(dir);
+
+    if (directory == NULL) {
+        printf("Error opening directory.\n");
+        return;
+    }
+
+    while ((entry = readdir(directory)) != NULL) {
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            strcat(shm_data, entry->d_name);
+            strcat(shm_data, "\n");
+        }
+    }
+
+    free(dir);
+
+    closedir(directory);
+}
+
 void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMain , char serverDirectory[MAX_PATH_LENGTH]){
    int child = fork();
     if(child == 0){
@@ -359,7 +399,7 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
                     handleHelp(tokens, tokenCount, shm_data);
 
                 else if(strcmp(tokens[0],"list") == 0){
-                    sprintf(shm_data,"%s","received : list\n");
+                    handleList(serverDirectory,shm_data);
                 }
                 else if(strcmp(tokens[0],"readF") == 0){
                     sprintf(shm_data,"%s","received : readF\n");

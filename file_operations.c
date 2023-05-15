@@ -94,29 +94,32 @@ char* readBinaryFileLine(const char* filename, int lineNumber) {
 }
 
 int writeFile(const char* path ,const char* filename, const char* content ,op_type op) {
-    char* dir = malloc(sizeof(path) + sizeof(filename) + 1);
+    char* dir = malloc(strlen(path) + strlen(filename) + 1);
     sprintf(dir,"%s/%s",path,filename);
     int fileDescriptor;
 
     if(op == UPDATE_OP){
-        fileDescriptor = open(dir, O_WRONLY | O_CREAT | O_EXCL, 0644);
+        fileDescriptor = open(dir, O_WRONLY | O_CREAT | O_EXCL , 0644);
     }
     else if(op == WRITE_OP){
-        fileDescriptor = open(dir, O_APPEND | O_CREAT, 0644);
+        fileDescriptor = open(dir, O_WRONLY | O_CREAT | O_APPEND, 0644);
     }
 
     if (fileDescriptor == -1) {
+        free(dir);
         //perror("Error opening file");
         return -1;
     }
 
     ssize_t bytesWritten = write(fileDescriptor, content, strlen(content));
     if (bytesWritten == -1) {
+        free(dir);
         //perror("Error writing to file");
         return -1;
     }
 
     close(fileDescriptor);
+    free(dir);
 
     return 0;
 }
