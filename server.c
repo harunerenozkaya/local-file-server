@@ -17,8 +17,9 @@
 #define SEM_SERVERCLIENT_PATH "/tmp/sem_server_client"
 #define SHM_SERVERCLIENT_PATH "/tmp/shm_server_client"
 
-#define MAX_CLIENT 5
 #define SHM_SERVERCLIENT_SIZE 1024*1024*100
+
+#define MAX_PATH_LENGTH 256
 
 // Shared memory struct
 typedef struct {
@@ -350,6 +351,13 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
                 }
                 else if(strcmp(tokens[0],"killServer") == 0){
                     sprintf(shm_data,"%s","Quitting...\n");
+
+                    sem_post(sem);
+
+                    //Free tokens
+                    freeTokens(tokens, tokenCount);
+
+                    break;
                 }
                 else{
                     sprintf(shm_data,"%s","Not correct command!\n");
@@ -401,8 +409,8 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
  * synchronization between different processes. It is likely used to ensure that only one process is
  * accessing a shared resource (such as the serverInfo struct) at a time.
  */
-void processQueue(shared_serverInfo_t* serverInfo, sem_t* semMain) {
-    if(isEmpty(&(serverInfo->queue)) != 1 && serverInfo->currentClientCount < MAX_CLIENT){
+void processQueue(shared_serverInfo_t* serverInfo, sem_t* semMain ,int maxClientCount) {
+    if(isEmpty(&(serverInfo->queue)) != 1 && serverInfo->currentClientCount < maxClientCount){
         char* clientPid = dequeue(&(serverInfo->queue));
         int clientPidInt = atoi(clientPid);
         //Control if the client is still waiting or exited
@@ -420,15 +428,20 @@ void processQueue(shared_serverInfo_t* serverInfo, sem_t* semMain) {
 }
 
 
-int main()
+int main(int argc, char *argv[])
 {   
+    char serverDirectory[MAX_PATH_LENGTH];
+    int maxClientCount;
     int fd_server;
     int fd_client;
     char buf_read[256];
     char buf_write[256];
     ssize_t n;
 
-    //Determine signal handlers
+    /******************************
+    ** Determine signal handlers **
+    *******************************/
+
     if (signal(SIGINT, sig_handler) == SIG_ERR)
         perror("\nERROR : can't catch SIGINT\n");
     if (signal(SIGTERM, sig_handler) == SIG_ERR)
@@ -437,7 +450,51 @@ int main()
         perror("\nERROR : can't catch SIGQUIT\n");
     if (signal(SIGTSTP, sig_handler) == SIG_ERR)
         perror("\nERROR : can't catch SIGTSTP\n");
-    
+
+    /**********************
+    ** Control argcount  **
+    ***********************/
+
+    //If argcount is not correct
+    if (argc != 3) {
+        printf("Usage: %s server_directory max_client_count\n", argv[0]);
+        return 1;
+    }
+
+    /****************************************
+    ** Determine server directory (argv[1])**
+    ****************************************/
+
+    strcpy(serverDirectory, argv[1]);
+
+    // Check if the server directory is set to "Here"
+    if (strcmp(serverDirectory, "Here") == 0) {
+        // Get the path of the server program directory
+        if (getcwd(serverDirectory, sizeof(serverDirectory)) == NULL) {
+            perror("Failed to get current directory");
+            return 1;
+        }
+    }
+
+    // Check if the server directory exists
+    struct stat directoryStat;
+    if (stat(serverDirectory, &directoryStat) == -1) {
+        // Directory doesn't exist, so create it
+        if (mkdir(serverDirectory, 0777) == -1) {
+            perror("Failed to create server directory");
+            return 1;
+        }
+    }
+
+    /****************************************
+    ** Determine max client count (argv[2])**
+    *****************************************/
+    maxClientCount = atoi(argv[2]);
+  
+    /*********************************************
+    ** Shared memory for client count and queue **
+    **********************************************/
+
     shm_unlink(SHM_MAINSERVER_PATH);
     // Create shared memory for client count and queue
     int shm_serverInfo_fd = shm_open(SHM_MAINSERVER_PATH, O_CREAT | O_RDWR, 0666);
@@ -463,11 +520,19 @@ int main()
     serverInfo->currentClientCount = 0;
     serverInfo->queue = createQueue();
 
+    /*******************
+    ** Get server pid **
+    ********************/
+
     //Convert pid to char array 
     int pid = getpid();
     char pid_s[32] = "";
     snprintf(pid_s,32,"%d",pid);
     //printf("SERVER PID : %s\n",pid_s);
+
+    /********************************************************
+    ** Set server fifo for handling client connect request **
+    *********************************************************/
 
     // Set server fifo path
     char fifo_server_path[64] = ""; 
@@ -480,9 +545,6 @@ int main()
         printf("ERROR : fifo_swcr couldn't be created");
         return -1;
     }
-   
-    printf("Server Started PID : %d\n",pid);
-    printf("Waiting for clients...\n");
 
     // Open the server FIFO for reading 
     fd_server = open(fifo_server_path, O_RDONLY);
@@ -491,18 +553,32 @@ int main()
         return -1;
     }
 
-    /* Semaphores to synchorinize handle connection request proces and queue control process*/
+    /********************************
+    ** Create erver main semaphore **
+    *********************************/
+
+    /* Semaphores to synchorinize handle connection request proces and child server process*/
     sem_t* semMain = sem_open("/tmp/semMain", O_CREAT | O_EXCL, 0666, 1);
     if (semMain < 0) {
         perror("sem_init");
         exit(1);
     }
 
+    /***************************
+    ** Server started message **
+    ****************************/
+   
+    printf("Server Started PID : %d\n",pid);
+    printf("Waiting for clients...\n");
+
+    /**************
+    ** Main loop **
+    ***************/
 
     // Read data from the client via fd_server fifo
     while (1) {
         //Control queue and process the connection requests
-        processQueue(serverInfo,semMain);
+        processQueue(serverInfo,semMain,maxClientCount);
 
         ssize_t n = read(fd_server, buf_read, sizeof(buf_read));
         
@@ -532,7 +608,7 @@ int main()
             sem_wait(semMain);
             
             //If request is tryConnect and currentClientCount is full than reject
-            if(connectionType == 't' && serverInfo->currentClientCount == MAX_CLIENT){
+            if(connectionType == 't' && serverInfo->currentClientCount == maxClientCount){
                 strcat(response,"ERROR : Server has been reached the maximum client!\n");
                 if(write(fd_client,response,strlen(response)) == -1){
                     printf("ERROR : Server connection response couldn't be writed");
@@ -541,7 +617,7 @@ int main()
                 printf("Client(%s) rejected\n",clientPid);
             }
             //If request is Connect and currentClientCount is full than put queue
-            else if(connectionType == 'c' && serverInfo->currentClientCount == MAX_CLIENT){
+            else if(connectionType == 'c' && serverInfo->currentClientCount == maxClientCount){
                 strcat(response,"WARNING : Server has been reached the maximum client! You are in queue\n");
                 if(write(fd_client,response,strlen(response)) == -1){
                     printf("ERROR : Server connection response couldn't be writed");
@@ -574,6 +650,10 @@ int main()
         memset(buf_read, 0, sizeof(buf_read));  
     }
     
+    /**********************
+    ** Close connections **
+    ***********************/
+
     close(shm_serverInfo_fd);
     close(fd_client);
     close(fd_server);

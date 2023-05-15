@@ -6,4 +6,4 @@ compile:
 	gcc client.c -o client.o
 
 run:
-	./server.o
+	./server.o Here 5
