@@ -392,6 +392,7 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
         //Decrease current client count
         sem_wait(semMain);
         serverInfo->currentClientCount -= 1;
+        printf("Client(%s) disconnected\n",pid);
         sem_post(semMain);
 
         exit(0);
@@ -419,7 +420,6 @@ void processQueue(shared_serverInfo_t* serverInfo, sem_t* semMain ,int maxClient
         else{
             printf("Client (%s) connected from queue\n",clientPid);
             serverInfo->currentClientCount += 1;
-            printf("Current client count : %d\n",serverInfo->currentClientCount);
             run_child_server(clientPid,serverInfo,semMain,serverDirectory);
         }
         free(clientPid);

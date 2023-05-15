@@ -268,16 +268,6 @@ int main(int argc, char *argv[])
     if (close(shm_fd) == -1) {
         perror("close");
     }
-
-    /* Remove shared memory segment */
-    if (shm_unlink(shm_path) == -1) {
-        perror("shm_unlink");
-    }
-
-    /* Remove semaphore segment */
-    if (sem_unlink(sem_path) == -1) {
-        perror("sem_unlink");
-    }
     
     return 0;
 }
