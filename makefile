@@ -2,8 +2,9 @@ all: compile run
 
 compile:
 	gcc -c queue.c -o queue.o
-	gcc server.c queue.o -o server.o
-	gcc client.c -o client.o
+	gcc -c file_operations.c -o file_operations.o
+	gcc server.c queue.o file_operations.o -o server.o
+	gcc client.c file_operations.o -o client.o
 
 run:
-	./server.o Here 5
+	./server.o /tmp/folder 5

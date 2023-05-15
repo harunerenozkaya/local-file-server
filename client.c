@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include <semaphore.h>
+#include "file_operations.h"
 
 #define FIFO_SERVER_PATH "/tmp/server_fifo"
 #define FIFO_CLIENT_PATH "/tmp/client_fifo"
@@ -15,10 +16,6 @@
 #define SHM_SERVERCLIENT_PATH "/tmp/shm_server_client"
 
 #define SHM_SERVERCLIENT_SIZE 1024*1024*100
-
-
-
-//TODO if client is waiting and ctcl-c send server to request to quit
 
 void close_client_fifo(int pid){
     /*Convert pid to char array */
@@ -80,6 +77,30 @@ void sig_handler(int signo){
         close_client_server_shm_sem(getpid());
         exit(1);
     }
+}
+
+int tokenizeRequest(char* request, char*** tokens) {
+    int tokenCount = 0;
+    char* token;
+    char** tokenArray = NULL;
+    
+    token = strtok(request, " ");
+    while (token != NULL) {
+        tokenArray = (char**)realloc(tokenArray, sizeof(char*) * (tokenCount + 1));
+        tokenArray[tokenCount] = (char*)malloc(strlen(token) + 1);
+        strcpy(tokenArray[tokenCount], token);
+        tokenCount++;
+        token = strtok(NULL, " ");
+    }
+
+    // Check if the last token has a newline character at the end
+    int lastTokenLength = strlen(tokenArray[tokenCount - 1]);
+    if (lastTokenLength > 0 && tokenArray[tokenCount - 1][lastTokenLength - 1] == '\n') {
+        tokenArray[tokenCount - 1][lastTokenLength - 1] = '\0'; // Remove the newline character
+    }
+    
+    *tokens = tokenArray;
+    return tokenCount;
 }
 
 int main(int argc, char *argv[])
@@ -223,6 +244,12 @@ int main(int argc, char *argv[])
 
     while(1){
         char buffRequest[64];
+        char copyBuffRequest[64];
+        char** tokens = NULL;
+        int tokenCount = 0;
+
+        memset(buffRequest, 0, sizeof(buffRequest)); 
+        memset(copyBuffRequest, 0, sizeof(copyBuffRequest));
 
         //Other than first request dont give turn server
         if (isFirst == 1){
@@ -239,10 +266,48 @@ int main(int argc, char *argv[])
             }
         }while((requestLength-1) <= 0);
 
-        //Write request to data
-        shm_data[0] = '\0';     
-        sprintf(shm_data,"%d.%s",requestLength,buffRequest);
-        sem_post(sem);
+        //Copy request because when tokenizing it is broken
+        strcpy(copyBuffRequest,buffRequest);
+
+        //Tokenize the request
+        tokenCount = tokenizeRequest(buffRequest, &tokens);
+
+        //If request is upload than go server and turn back and write file content
+        //to shm_data
+        if(strcmp(tokens[0],"upload") == 0){
+            
+            //If there is no file name then pass
+            if(tokenCount == 1){
+                printf("Error : Please provide a file name\n");
+                isFirst = 0;
+                continue;
+            }
+
+            //If file can not be opened then pass
+            char* fileContent;
+            if(readFile(tokens[1],&fileContent) == -1){
+                isFirst = 0;                
+                continue;
+            }
+
+            //Write request to data
+            shm_data[0] = '\0';
+            sprintf(shm_data,"%d.%s",requestLength,copyBuffRequest);
+            sem_post(sem);
+
+            sem_wait(sem);
+            //It turned form server , write file content
+            shm_data[0] = '\0';     
+            sprintf(shm_data,"%s",fileContent);
+            sem_post(sem);
+
+        }
+        else{
+            //Write request to data
+            shm_data[0] = '\0';     
+            sprintf(shm_data,"%d.%s",requestLength,copyBuffRequest);
+            sem_post(sem);
+        }
 
         //Get response from data
         sem_wait(sem);

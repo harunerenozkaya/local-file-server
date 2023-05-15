@@ -9,6 +9,7 @@
 #include "queue.h"
 #include <sys/mman.h>
 #include <signal.h>
+#include "file_operations.h"
 
 #define FIFO_SERVER_PATH "/tmp/server_fifo"
 #define FIFO_CLIENT_PATH "/tmp/client_fifo"
@@ -259,7 +260,41 @@ void handleHelp(char** tokens, int tokenCount, char* shm_data) {
     }
 }
 
+/**
+ * The function handles the uploading of a file to the server and responds to the client with a success
+ * or failure message.
+ * 
+ * @param serverDirectory A string representing the directory path of the server where the file will be
+ * uploaded.
+ * @param tokens The tokens parameter is an array of strings that contains the command and its
+ * arguments passed by the client to the server. In this case, it likely contains the command "upload"
+ * and the name of the file to be uploaded.
+ * @param sem The "sem" parameter is a pointer to a semaphore object that is used for synchronization
+ * between the client and server processes. It is used to signal the client to send the file content
+ * and to wait for the content to be received before proceeding with the file upload.
+ * @param shm_data A shared memory segment where data is stored and exchanged between processes.
+ */
+void handleUpload(char* serverDirectory, char* tokens[], sem_t* sem, char* shm_data) {
+    // Get file name
+    char* fileName = malloc(strlen(tokens[1]) + 1);
+    strcpy(fileName, tokens[1]);
 
+    // Upload received, notify the client to send file content
+    sem_post(sem);
+    sem_wait(sem);
+
+    // File content is received from the client
+    if (writeFile(serverDirectory, fileName, shm_data, UPDATE_OP) == -1) {
+        // Respond to the client with a message indicating file upload failure
+        sprintf(shm_data, "%s", "File is couldn't be uploaded to the server.\n");
+    } else {
+        // Respond to the client with a message indicating successful file upload
+        sprintf(shm_data, "%s", "File is uploaded to the server.\n");
+    }
+
+    // Clean up resources
+    free(fileName);
+}
 
 void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMain , char serverDirectory[MAX_PATH_LENGTH]){
    int child = fork();
@@ -332,9 +367,9 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
                 else if(strcmp(tokens[0],"writeT") == 0){
                     sprintf(shm_data,"%s","received : writeT\n");
                 }
-                else if(strcmp(tokens[0],"upload") == 0){
-                    sprintf(shm_data,"%s","received : upload\n");
-                }
+                else if(strcmp(tokens[0],"upload") == 0)
+                    handleUpload(serverDirectory,tokens,sem,shm_data);
+                
                 else if(strcmp(tokens[0],"download") == 0){
                     sprintf(shm_data,"%s","received : download\n");
                 }
