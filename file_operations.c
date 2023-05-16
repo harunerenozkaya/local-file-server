@@ -19,35 +19,73 @@ void closeFile(int fileDescriptor) {
     }
 }
 
-int readFile(const char* filename,char** fileContent) {
-    int fileDescriptor = open(filename, O_RDONLY);
-    if (fileDescriptor == -1) {
-        perror("Error opening file");
+int readWholeContent(char* fileDir,char* shm_data) {
+    FILE* file = fopen(fileDir, "r");
+    if (file == NULL) {
+        //perror("Error opening file");
         return -1;
     }
 
-    off_t size = lseek(fileDescriptor, 0, SEEK_END);
-    lseek(fileDescriptor, 0, SEEK_SET);
+    // Seek to the end of the file to determine its size
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
 
-    *fileContent = malloc(size + 1);
-    if (*fileContent == NULL) {
-        perror("Memory allocation error");
-        close(fileDescriptor);
+    // Allocate memory for file contents
+    char* fileContent = malloc(fileSize + 1); // +1 for null terminator
+    if (fileContent == NULL) {
+        //perror("Error allocating memory");
+        fclose(file);
         return -1;
     }
 
-    ssize_t bytesRead = read(fileDescriptor, *fileContent, size);
-    if (bytesRead == -1) {
-        perror("Error reading file");
-        free(*fileContent);
-        close(fileDescriptor);
+    // Read the entire file into fileContent
+    size_t bytesRead = fread(fileContent, 1, fileSize, file);
+    if (bytesRead != (size_t)fileSize) {
+        //perror("Error reading file");
+        free(fileContent);
+        fclose(file);
         return -1;
     }
 
-    (*fileContent)[size] = '\0';
+    // Null-terminate the file content
+    fileContent[fileSize] = '\0';
 
-    close(fileDescriptor);
+    // Copy the file content to shm_data
+    strcpy(shm_data, fileContent);
+
+    // Clean up resources
+    free(fileContent);
+    fclose(file);
+
     return 0;
+}
+
+int readSpecificLineContent(const char* fileDir, char* shm_data , int lineNumber) {
+    FILE* file = fopen(fileDir, "r");
+    if (file == NULL) {
+        sprintf(shm_data, "Error: An error occured when reading content.");
+        return -1;
+    }
+
+    int currentLine = 1;
+    char line[1024]; // Adjust the line length as per your needs
+
+    // Find the desired line
+    while (fgets(line, sizeof(line), file) != NULL) {
+        if (currentLine == lineNumber) {
+            // Copy the line content to shm_data
+            strcpy(shm_data, line);
+            fclose(file);
+            return 0;
+        }
+        currentLine++;
+    }
+
+    // Line number not found
+    sprintf(shm_data, "Error: Line number %d not found in the file.\n", lineNumber);
+    fclose(file);
+    return -1;
 }
 
 char* readTextFileLine(const char* filename, int lineNumber) {

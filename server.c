@@ -355,6 +355,32 @@ void handleDownload(char* serverDirectory, char* tokens[],char* shm_data){
     free(fileRealPath);
 }
 
+void handleReadF(const char* serverDirectory, char* tokens[], int tokenCount, char* shm_data) {
+    if (tokenCount == 1 || tokenCount > 3) {
+        sprintf(shm_data, "Error: Incorrect use of readF!");
+    } else {
+        char* dir = malloc(strlen(serverDirectory) + strlen(tokens[1]) + 1);
+        sprintf(dir, "%s/%s", serverDirectory, tokens[1]);
+        int fd = openFile(dir);
+        if (fd >= 0) {
+            closeFile(fd);
+            if (tokenCount == 2) {
+                readWholeContent(dir, shm_data);
+            } else if (tokenCount == 3) {
+                int lineNumber = atoi(tokens[2]);
+                if (lineNumber <= 0) {
+                    sprintf(shm_data, "Error: Please provide a valid line number");
+                } else {
+                    readSpecificLineContent(dir, shm_data, lineNumber);
+                }
+            }
+        } else {
+            sprintf(shm_data, "Error: There is no such file '%s' in the server directory!", tokens[1]);
+        }
+        free(dir);
+    }
+}
+
 void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMain , char serverDirectory[MAX_PATH_LENGTH]){
    int child = fork();
     if(child == 0){
@@ -420,7 +446,7 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
                     handleList(serverDirectory,shm_data);
                 }
                 else if(strcmp(tokens[0],"readF") == 0){
-                    sprintf(shm_data,"%s","received : readF\n");
+                    handleReadF(serverDirectory,tokens,tokenCount,shm_data);
                 }
                 else if(strcmp(tokens[0],"writeT") == 0){
                     sprintf(shm_data,"%s","received : writeT\n");
