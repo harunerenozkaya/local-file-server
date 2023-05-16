@@ -272,8 +272,8 @@ int main(int argc, char *argv[])
     int requestLength = 0;
 
     while(1){
-        char buffRequest[64];
-        char copyBuffRequest[64];
+        char buffRequest[1024*4];
+        char copyBuffRequest[1024*4];
         char** tokens = NULL;
         int tokenCount = 0;
 

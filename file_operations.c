@@ -134,9 +134,16 @@ int copyFile(const char* path, const char* filePath, op_type op) {
     return 0;
 }
 
-int writeWholeContent(const char* filePath, char* tokens[], int tokenCount) {
+int writeWholeContent(const char* filePath, char* tokens[], int tokenCount, char* shm_data) {
     int file = open(filePath, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (file == -1) {
+        sprintf(shm_data, "Error: Unable to access to file.\n");
+        return -1;
+    }
+
+    if (flock(file, LOCK_EX) == -1) {
+        sprintf(shm_data, "Error: Unable to acquire lock on the file.\n");
+        close(file);
         return -1;
     }
 
@@ -149,6 +156,7 @@ int writeWholeContent(const char* filePath, char* tokens[], int tokenCount) {
         write(file, " ", 1);
     }
 
+    flock(file, LOCK_UN);
     if (close(file) == -1) {
         return -1;
     }
@@ -160,6 +168,15 @@ int writeLineContent(const char* filePath, char* tokens[], int tokenCount, int l
     FILE* file = fopen(filePath, "r+");
     if (file == NULL) {
         //printf("Unable to open file %s.\n", filePath);
+        return -1;
+    }
+
+    // Get the file descriptor from the FILE*
+    int fileDescriptor = fileno(file);
+
+    if (flock(fileDescriptor, LOCK_EX) == -1) {
+        sprintf(shm_data, "Error: Unable to acquire lock on the file.\n");
+        close(fileDescriptor);
         return -1;
     }
 
@@ -178,6 +195,7 @@ int writeLineContent(const char* filePath, char* tokens[], int tokenCount, int l
     // Check if the specified line number is valid
     if (currentLineNumber != lineNumber) {
         sprintf(shm_data, "Error: Line number %d not found in the file.\n", lineNumber);
+        flock(fileDescriptor, LOCK_UN);
         fclose(file);
         return -1;
     }
@@ -212,6 +230,7 @@ int writeLineContent(const char* filePath, char* tokens[], int tokenCount, int l
             break;
     }
 
+    flock(fileDescriptor, LOCK_UN);
     fclose(file);
     return 0;
 }

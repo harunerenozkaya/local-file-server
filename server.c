@@ -396,10 +396,8 @@ void handleWriteT(const char* serverDirectory, char* tokens[], int tokenCount, c
             closeFile(fd);
             // Whole content
             if (lineNumber <= 0) {
-                if (writeWholeContent(dir, tokens, tokenCount) == 0) {
+                if (writeWholeContent(dir, tokens, tokenCount, shm_data) == 0) {
                     sprintf(shm_data, "%s", "Content is written successfully.\n");
-                } else {
-                    sprintf(shm_data, "%s", "An error occurred when writing content\n");
                 }
             }
             // Line

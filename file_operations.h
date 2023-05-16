@@ -19,7 +19,7 @@ int readSpecificLineContent(const char* fileDir, char* shm_data , int lineNumber
 
 int copyFile(const char* path, const char* filePath, op_type op);
 
-int writeWholeContent(const char* filePath, char* tokens[], int tokenCount);
+int writeWholeContent(const char* filePath, char* tokens[], int tokenCount, char* shm_data);
 
 int writeLineContent(const char* filePath, char* tokens[], int tokenCount, int lineNumber ,char* shm_data);
 
