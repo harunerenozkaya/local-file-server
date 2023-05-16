@@ -103,6 +103,35 @@ int tokenizeRequest(char* request, char*** tokens) {
     return tokenCount;
 }
 
+void handleUploadRequest(const char* filename, char* shm_data, sem_t* sem) {
+    // If there is no file name, then return with an error message
+    if (filename == NULL || strlen(filename) == 0) {
+        printf("Error: Please provide a file name\n");
+        return;
+    }
+
+    // If the file cannot be opened, then return with an error message
+    if (openFile(filename) == -1) {
+        return;
+    }
+
+    // Get the file path
+    char path[100] = "";
+    if (realpath(filename, path) == NULL) {
+        perror("Error retrieving program path");
+        return;
+    }
+
+    // Write the file path to shm_data
+    char* uploadRequestWithPath = malloc(strlen(path) + strlen("upload") + 2);
+    sprintf(uploadRequestWithPath, "upload %s", path);
+    shm_data[0] = '\0';
+    sprintf(shm_data, "%lu.%s", strlen(uploadRequestWithPath) + 1, uploadRequestWithPath);
+
+    sem_post(sem);
+}
+
+
 int main(int argc, char *argv[])
 {   
     int fd_server;
@@ -110,7 +139,7 @@ int main(int argc, char *argv[])
     char buf_read[256] = "";
     char buf_write[256] = "";
     char connectionStatus[5] = "";
-
+    
     //Determine signal handlers
     if (signal(SIGINT, sig_handler) == SIG_ERR)
         perror("\nERROR : can't catch SIGINT\n");
@@ -272,10 +301,8 @@ int main(int argc, char *argv[])
         //Tokenize the request
         tokenCount = tokenizeRequest(buffRequest, &tokens);
 
-        //If request is upload than go server and turn back and write file content
-        //to shm_data
+        //Handle upload request
         if(strcmp(tokens[0],"upload") == 0){
-            
             //If there is no file name then pass
             if(tokenCount == 1){
                 printf("Error : Please provide a file name\n");
@@ -284,30 +311,31 @@ int main(int argc, char *argv[])
             }
 
             //If file can not be opened then pass
-            char* fileContent;
-            if(readFile(tokens[1],&fileContent) == -1){
+            if(openFile(tokens[1]) == -1){
                 isFirst = 0;                
                 continue;
             }
 
-            //Write request to data
+            //Get file path
+            char path[100] = "";
+            if (realpath(tokens[1], path) == NULL) {
+                perror("Error retrieving program path");
+                continue;
+            }
+
+            //Write file path to shm_data
+            char* uploadRequestWithPath = malloc(sizeof(path) + sizeof(tokens[0] + 1));
+            sprintf(uploadRequestWithPath,"%s %s",tokens[0],path);
             shm_data[0] = '\0';
-            sprintf(shm_data,"%d.%s",requestLength,copyBuffRequest);
-            sem_post(sem);
-
-            sem_wait(sem);
-            //It turned form server , write file content
-            shm_data[0] = '\0';     
-            sprintf(shm_data,"%s",fileContent);
-            sem_post(sem);
-
+            sprintf(shm_data,"%lu.%s",strlen(uploadRequestWithPath)+1,uploadRequestWithPath);
         }
+        //Handle other requests
         else{
             //Write request to data
             shm_data[0] = '\0';     
             sprintf(shm_data,"%d.%s",requestLength,copyBuffRequest);
-            sem_post(sem);
         }
+        sem_post(sem);
 
         //Get response from data
         sem_wait(sem);

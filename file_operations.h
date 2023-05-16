@@ -22,7 +22,7 @@ char* readTextFileLine(const char* filename, int lineNumber);
 char* readBinaryFileLine(const char* filename, int lineNumber);
 
 // Function to write content to a file
-int writeFile(const char* path ,const char* filename, const char* content ,op_type op);
+int copyFile(const char* path, const char* filePath, op_type op);
 
 // Function to write content to a specific line in a text file
 void writeTextFileLine(const char* filename, const char* content, int lineNumber);

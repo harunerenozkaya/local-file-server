@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 int openFile(const char* filename) {
-    int fileDescriptor = open(filename, O_RDWR | O_CREAT, 0644);
+    int fileDescriptor = open(filename, O_RDWR , 0644);
     if (fileDescriptor == -1) {
         perror("Error opening file");
         return -1;
@@ -93,32 +93,39 @@ char* readBinaryFileLine(const char* filename, int lineNumber) {
     return buffer;
 }
 
-int writeFile(const char* path ,const char* filename, const char* content ,op_type op) {
-    char* dir = malloc(strlen(path) + strlen(filename) + 1);
-    sprintf(dir,"%s/%s",path,filename);
-    int fileDescriptor;
-
-    if(op == UPDATE_OP){
-        fileDescriptor = open(dir, O_WRONLY | O_CREAT | O_EXCL , 0644);
-    }
-    else if(op == WRITE_OP){
-        fileDescriptor = open(dir, O_WRONLY | O_CREAT | O_APPEND, 0644);
-    }
-
-    if (fileDescriptor == -1) {
-        free(dir);
-        //perror("Error opening file");
+int copyFile(const char* path, const char* filePath, op_type op) {
+    const char* lastSlash = strrchr(filePath, '/');
+    const char* fileName = (lastSlash != NULL) ? lastSlash + 1 : filePath;
+    char* dir = malloc(strlen(path) + strlen(fileName) + 1);
+    sprintf(dir, "%s/%s", path, fileName);
+    
+    FILE* readStream = fopen(filePath,"rb");
+    if (readStream == NULL) {
+        perror("Error opening file");
         return -1;
     }
 
-    ssize_t bytesWritten = write(fileDescriptor, content, strlen(content));
-    if (bytesWritten == -1) {
+    FILE* writeStream;
+    if (op == UPDATE_OP) {
+        writeStream = fopen(dir, "wb");
+    } else if (op == WRITE_OP) {
+        writeStream = fopen(dir, "ab");
+    }
+    if (writeStream == NULL) {
         free(dir);
-        //perror("Error writing to file");
+        // perror("Error opening file");
         return -1;
     }
 
-    close(fileDescriptor);
+    int buffer_size = 4096;
+    char* buffer = malloc(buffer_size);
+    size_t bytesRead;
+    while ((bytesRead = fread(buffer, 1, buffer_size, readStream)) > 0) {
+        fwrite(buffer, 1, bytesRead, writeStream);
+    }
+
+    fclose(writeStream);
+    fclose(readStream);
     free(dir);
 
     return 0;

@@ -277,15 +277,11 @@ void handleHelp(char** tokens, int tokenCount, char* shm_data) {
  */
 void handleUpload(char* serverDirectory, char* tokens[], sem_t* sem, char* shm_data) {
     // Get file name
-    char* fileName = malloc(strlen(tokens[1]) + 1);
-    strcpy(fileName, tokens[1]);
-
-    // Upload received, notify the client to send file content
-    sem_post(sem);
-    sem_wait(sem);
+    char* filePath = malloc(strlen(tokens[1]) + 1);
+    strcpy(filePath, tokens[1]);
 
     // File content is received from the client
-    if (writeFile(serverDirectory, fileName, shm_data, UPDATE_OP) == -1) {
+    if (copyFile(serverDirectory, filePath, UPDATE_OP) == -1) {
         // Respond to the client with a message indicating file upload failure
         sprintf(shm_data, "%s", "File is couldn't be uploaded to the server.\n");
     } else {
@@ -294,8 +290,10 @@ void handleUpload(char* serverDirectory, char* tokens[], sem_t* sem, char* shm_d
     }
 
     // Clean up resources
-    free(fileName);
+    free(filePath);
 }
+
+
 
 /**
  * The function lists the contents of a directory and appends the names of the files to a shared memory
@@ -348,7 +346,6 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
         char shm_path[64] = ""; 
         strcat(shm_path,SHM_SERVERCLIENT_PATH);
         strcat(shm_path,pid);
-        
 
         /* Semaphore to synchorinize handle operations between server and client*/
         sem_t* sem = sem_open(sem_path, O_CREAT, 0666, 1);
