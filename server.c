@@ -381,6 +381,39 @@ void handleReadF(const char* serverDirectory, char* tokens[], int tokenCount, ch
     }
 }
 
+void handleWriteT(const char* serverDirectory, char* tokens[], int tokenCount, char* shm_data) {
+    if (tokenCount < 3) {
+        sprintf(shm_data, "%s", "Error: Incorrect usage of writeT\n");
+    } else {
+        char* dir = malloc(strlen(serverDirectory) + strlen(tokens[1]) + 1);
+        sprintf(dir, "%s/%s", serverDirectory, tokens[1]);
+        int lineNumber = atoi(tokens[2]);
+
+        int fd = openFile(dir);
+        if (fd == -1) {
+            sprintf(shm_data, "%s", "Error: There is no such file or the server cannot be reached now\n");
+        } else {
+            closeFile(fd);
+            // Whole content
+            if (lineNumber <= 0) {
+                if (writeWholeContent(dir, tokens, tokenCount) == 0) {
+                    sprintf(shm_data, "%s", "Content is written successfully.\n");
+                } else {
+                    sprintf(shm_data, "%s", "An error occurred when writing content\n");
+                }
+            }
+            // Line
+            else {
+                if (writeLineContent(dir, tokens, tokenCount, lineNumber, shm_data) == 0) {
+                    sprintf(shm_data, "%s", "Content is written successfully on the line.\n");
+                }
+            }
+        }
+
+        free(dir);
+    }
+}
+
 void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMain , char serverDirectory[MAX_PATH_LENGTH]){
    int child = fork();
     if(child == 0){
@@ -442,21 +475,21 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
                 if(strcmp(tokens[0],"help") == 0)
                     handleHelp(tokens, tokenCount, shm_data);
 
-                else if(strcmp(tokens[0],"list") == 0){
+                else if(strcmp(tokens[0],"list") == 0)
                     handleList(serverDirectory,shm_data);
-                }
-                else if(strcmp(tokens[0],"readF") == 0){
+                
+                else if(strcmp(tokens[0],"readF") == 0)
                     handleReadF(serverDirectory,tokens,tokenCount,shm_data);
-                }
-                else if(strcmp(tokens[0],"writeT") == 0){
-                    sprintf(shm_data,"%s","received : writeT\n");
-                }
+                
+                else if(strcmp(tokens[0],"writeT") == 0)
+                    handleWriteT(serverDirectory,tokens,tokenCount,shm_data);
+                
                 else if(strcmp(tokens[0],"upload") == 0)
                     handleUpload(serverDirectory,tokens,shm_data);
                 
-                else if(strcmp(tokens[0],"download") == 0){
+                else if(strcmp(tokens[0],"download") == 0)
                     handleDownload(serverDirectory,tokens,shm_data);
-                }
+                
                 else if(strcmp(tokens[0],"quit") == 0){
                     sprintf(shm_data,"%s","Quitting...\n");
 

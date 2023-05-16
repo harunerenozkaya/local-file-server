@@ -17,15 +17,10 @@ int readWholeContent(char* fileDir,char* shm_data);
 
 int readSpecificLineContent(const char* fileDir, char* shm_data , int lineNumber);
 
-// Function to read a single line from a text file
-char* readTextFileLine(const char* filename, int lineNumber);
-
-// Function to read a single line from a binary file
-char* readBinaryFileLine(const char* filename, int lineNumber);
-
 int copyFile(const char* path, const char* filePath, op_type op);
 
-// Function to write content to a specific line in a text file
-void writeTextFileLine(const char* filename, const char* content, int lineNumber);
+int writeWholeContent(const char* filePath, char* tokens[], int tokenCount);
+
+int writeLineContent(const char* filePath, char* tokens[], int tokenCount, int lineNumber ,char* shm_data);
 
 #endif

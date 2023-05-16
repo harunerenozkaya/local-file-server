@@ -88,48 +88,6 @@ int readSpecificLineContent(const char* fileDir, char* shm_data , int lineNumber
     return -1;
 }
 
-char* readTextFileLine(const char* filename, int lineNumber) {
-    int fileDescriptor = open(filename, O_RDONLY);
-    if (fileDescriptor == -1) {
-        perror("Error opening file");
-        return NULL;
-    }
-
-    char* buffer = NULL;
-    size_t bufsize = 0;
-    int currentLine = 0;
-
-    while (getline(&buffer, &bufsize, fdopen(fileDescriptor, "r")) != -1) {
-        if (++currentLine == lineNumber) {
-            break;
-        }
-    }
-
-    close(fileDescriptor);
-    return buffer;
-}
-
-char* readBinaryFileLine(const char* filename, int lineNumber) {
-    int fileDescriptor = open(filename, O_RDONLY);
-    if (fileDescriptor == -1) {
-        perror("Error opening file");
-        return NULL;
-    }
-
-    char* buffer = NULL;
-    size_t bufsize = 0;
-    int currentLine = 0;
-
-    while (getline(&buffer, &bufsize, fdopen(fileDescriptor, "r")) != -1) {
-        if (++currentLine == lineNumber) {
-            break;
-        }
-    }
-
-    close(fileDescriptor);
-    return buffer;
-}
-
 int copyFile(const char* path, const char* filePath, op_type op) {
     const char* lastSlash = strrchr(filePath, '/');
     const char* fileName = (lastSlash != NULL) ? lastSlash + 1 : filePath;
@@ -176,55 +134,84 @@ int copyFile(const char* path, const char* filePath, op_type op) {
     return 0;
 }
 
-void writeTextFileLine(const char* filename, const char* content, int lineNumber) {
-    int fileDescriptor = open(filename, O_RDWR);
-    if (fileDescriptor == -1) {
-        perror("Error opening file");
-        return;
+int writeWholeContent(const char* filePath, char* tokens[], int tokenCount) {
+    int file = open(filePath, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (file == -1) {
+        return -1;
     }
 
-    char* buffer = NULL;
-    size_t bufsize = 0;
-    int currentLine = 0;
-    off_t offset = 0;
-    off_t start = -1;
-    off_t end = -1;
+    for (int i = 2; i < tokenCount; i++) {
+        ssize_t bytesWritten = write(file, tokens[i], strlen(tokens[i]));
+        if (bytesWritten == -1) {
+            close(file);
+            return -1;
+        }
+        write(file, " ", 1);
+    }
 
-    while (getline(&buffer, &bufsize, fdopen(fileDescriptor, "r")) != -1) {
-        if (++currentLine == lineNumber) {
-            start = offset;
-            end = start + strlen(buffer);
+    if (close(file) == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int writeLineContent(const char* filePath, char* tokens[], int tokenCount, int lineNumber ,char* shm_data) {
+    FILE* file = fopen(filePath, "r+");
+    if (file == NULL) {
+        //printf("Unable to open file %s.\n", filePath);
+        return -1;
+    }
+
+    // Move the file pointer to the beginning of the target line
+    int currentLineNumber = 1;
+    while (currentLineNumber < lineNumber) {
+        char c = fgetc(file);
+        if (c == '\n') {
+            currentLineNumber++;
+        }
+        if(c == EOF){
             break;
         }
-        offset = lseek(fileDescriptor, 0, SEEK_CUR);
     }
 
-    if (start >= 0 && end >= 0) {
-        lseek(fileDescriptor, start, SEEK_SET);
-        ssize_t bytesWritten = write(fileDescriptor, content, strlen(content));
-        if (bytesWritten == -1) {
-            perror("Error writing to file");
-        }
-        off_t remaining = offset - end;
-        if (remaining > 0) {
-            char* temp = malloc(remaining);
-            ssize_t bytesRead = read(fileDescriptor, temp, remaining);
-            if (bytesRead == -1) {
-                perror("Error reading file");
-                free(temp);
-            } else {
-                lseek(fileDescriptor, start + strlen(content), SEEK_SET);
-                ssize_t bytesWritten = write(fileDescriptor, temp, bytesRead);
-                if (bytesWritten == -1) {
-                    perror("Error writing to file");
-                }
-                free(temp);
-            }
-        }
+    // Check if the specified line number is valid
+    if (currentLineNumber != lineNumber) {
+        sprintf(shm_data, "Error: Line number %d not found in the file.\n", lineNumber);
+        fclose(file);
+        return -1;
     }
 
-    close(fileDescriptor);
-    if (buffer != NULL) {
-        free(buffer);
+    // Remember the starting position and length of the target line
+    long startPosition = ftell(file);
+    long lineLength = 0;
+    int ch;
+    while ((ch = fgetc(file)) != '\n' && ch != EOF) {
+        lineLength++;
     }
+
+    // Go back to the starting position of the target line
+    fseek(file, startPosition, SEEK_SET);
+
+    // Replace the line with tokens
+    int currentTokenCount = 3;
+    while (currentTokenCount < tokenCount) {
+        fputs(tokens[currentTokenCount], file);
+        fputc(' ',file);
+        currentTokenCount++;
+    }
+
+    //Replace with space to end of the line
+    while(1){
+        char c = fgetc(file);
+        if(c != '\n' && c != EOF){
+            fseek(file,-1,SEEK_CUR);
+            fputs(" ",file);
+        }
+        else
+            break;
+    }
+
+    fclose(file);
+    return 0;
 }
