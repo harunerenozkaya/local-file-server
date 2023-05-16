@@ -281,7 +281,7 @@ void handleUpload(char* serverDirectory, char* tokens[], sem_t* sem, char* shm_d
     strcpy(filePath, tokens[1]);
 
     // File content is received from the client
-    if (copyFile(serverDirectory, filePath, UPDATE_OP) == -1) {
+    if (copyFile(serverDirectory, filePath, UPLOAD_OP) == -1) {
         // Respond to the client with a message indicating file upload failure
         sprintf(shm_data, "%s", "File is couldn't be uploaded to the server.\n");
     } else {
@@ -408,7 +408,24 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
                     handleUpload(serverDirectory,tokens,sem,shm_data);
                 
                 else if(strcmp(tokens[0],"download") == 0){
-                    sprintf(shm_data,"%s","received : download\n");
+                    char* fileRealPath = malloc(MAX_PATH_LENGTH + sizeof(tokens[1]));
+                    sprintf(fileRealPath,"%s/%s",serverDirectory,tokens[1]);
+
+                    //If file can not be opened
+                    int fd = openFile(fileRealPath);
+                    if(fd == -1){              
+                        sprintf(shm_data,"%s","Error : There is no such a file in the server directory!\n");
+                    }
+                    else{
+                        closeFile(fd);
+                        if(copyFile(tokens[2],fileRealPath,DOWNLOAD_OP) == 0){
+                            sprintf(shm_data,"%s","File has been downloaded\n");
+                        }else{
+                            sprintf(shm_data,"%s","Error : An error occured when downloading!\n");
+                        }
+                    }
+
+                    free(fileRealPath);
                 }
                 else if(strcmp(tokens[0],"quit") == 0){
                     sprintf(shm_data,"%s","Quitting...\n");

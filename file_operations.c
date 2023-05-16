@@ -8,7 +8,6 @@
 int openFile(const char* filename) {
     int fileDescriptor = open(filename, O_RDWR , 0644);
     if (fileDescriptor == -1) {
-        perror("Error opening file");
         return -1;
     }
     return fileDescriptor;
@@ -98,19 +97,27 @@ int copyFile(const char* path, const char* filePath, op_type op) {
     const char* fileName = (lastSlash != NULL) ? lastSlash + 1 : filePath;
     char* dir = malloc(strlen(path) + strlen(fileName) + 1);
     sprintf(dir, "%s/%s", path, fileName);
-    
+
     FILE* readStream = fopen(filePath,"rb");
     if (readStream == NULL) {
-        perror("Error opening file");
+        free(dir);
+        //perror("Error opening file");
         return -1;
     }
 
     FILE* writeStream;
-    if (op == UPDATE_OP) {
+    if (op == DOWNLOAD_OP) {
         writeStream = fopen(dir, "wb");
-    } else if (op == WRITE_OP) {
-        writeStream = fopen(dir, "ab");
+    } 
+    else if(op == UPLOAD_OP){
+        int fd = open(dir, O_CREAT | O_EXCL | O_WRONLY, 0666);
+        if(fd < 0){
+            free(dir);
+            return -1;
+        }
+        writeStream = fdopen(fd, "wb");
     }
+   
     if (writeStream == NULL) {
         free(dir);
         // perror("Error opening file");

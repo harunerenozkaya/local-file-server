@@ -287,7 +287,7 @@ int main(int argc, char *argv[])
         
         //Read request from user
         do{
-            printf("Enter command : ");
+            printf("\nEnter command : ");
             fflush(stdout);
             requestLength = read(0,buffRequest,sizeof(buffRequest));
             if(requestLength == -1){
@@ -311,11 +311,14 @@ int main(int argc, char *argv[])
             }
 
             //If file can not be opened then pass
-            if(openFile(tokens[1]) == -1){
+            int fd = openFile(tokens[1]);
+            if(fd == -1){
+                perror("Error opening file: No such file or directory");
                 isFirst = 0;                
                 continue;
             }
-
+            closeFile(fd);
+            
             //Get file path
             char path[100] = "";
             if (realpath(tokens[1], path) == NULL) {
@@ -328,6 +331,32 @@ int main(int argc, char *argv[])
             sprintf(uploadRequestWithPath,"%s %s",tokens[0],path);
             shm_data[0] = '\0';
             sprintf(shm_data,"%lu.%s",strlen(uploadRequestWithPath)+1,uploadRequestWithPath);
+
+            free(uploadRequestWithPath);
+        }
+        else if(strcmp(tokens[0],"download") == 0){
+            //If there is no file name then pass
+            if(tokenCount == 1){
+                printf("Error : Please provide a file name\n");
+                isFirst = 0;
+                continue;
+            }
+
+            //Get file path
+            char path[100] = "";
+            if (realpath(".", path) == NULL) {
+                perror("Error retrieving program path");
+                isFirst = 0;
+                continue;
+            }
+
+            //Write file path to shm_data
+            char* downloadRequestWithPath = malloc(sizeof(path) + sizeof(tokens[0] + sizeof(tokens[1]) + 2));
+            sprintf(downloadRequestWithPath,"%s %s %s",tokens[0],tokens[1],path);
+            shm_data[0] = '\0';
+            sprintf(shm_data,"%lu.%s",strlen(downloadRequestWithPath)+1,downloadRequestWithPath);
+            
+            free(downloadRequestWithPath);
         }
         //Handle other requests
         else{
@@ -339,7 +368,7 @@ int main(int argc, char *argv[])
 
         //Get response from data
         sem_wait(sem);
-        printf("%s",shm_data);
+        printf("\n%s",shm_data);
         fflush(stdout);
 
         if(strcmp(shm_data,"Quitting...\n") == 0){

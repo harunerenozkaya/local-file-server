@@ -2,8 +2,9 @@
 #define FILE_OPERATIONS_H
 
 typedef enum  {
-    UPDATE_OP,
-    WRITE_OP
+    UPLOAD_OP,
+    WRITE_OP,
+    DOWNLOAD_OP
 } op_type;
 
 // Function to open a file
