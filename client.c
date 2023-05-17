@@ -87,34 +87,12 @@ int tokenizeRequest(char* request, char*** tokens) {
     return tokenCount;
 }
 
-void handleUploadRequest(const char* filename, char* shm_data, sem_t* sem) {
-    // If there is no file name, then return with an error message
-    if (filename == NULL || strlen(filename) == 0) {
-        printf("Error: Please provide a file name\n");
-        return;
+void freeTokens(char** tokens, int tokenCount) {
+    for (int i = 0; i < tokenCount; i++) {
+        free(tokens[i]);
     }
-
-    // If the file cannot be opened, then return with an error message
-    if (openFile(filename) == -1) {
-        return;
-    }
-
-    // Get the file path
-    char path[100] = "";
-    if (realpath(filename, path) == NULL) {
-        perror("Error retrieving program path");
-        return;
-    }
-
-    // Write the file path to shm_data
-    char* uploadRequestWithPath = malloc(strlen(path) + strlen("upload") + 2);
-    sprintf(uploadRequestWithPath, "upload %s", path);
-    shm_data[0] = '\0';
-    sprintf(shm_data, "%lu.%s", strlen(uploadRequestWithPath) + 1, uploadRequestWithPath);
-
-    sem_post(sem);
+    free(tokens);
 }
-
 
 int main(int argc, char *argv[])
 {   
@@ -363,7 +341,9 @@ int main(int argc, char *argv[])
         //Make isFirst 0 to dont turn server
         if (isFirst == 1){
             isFirst = 0;
-        }  
+        }
+
+        freeTokens(tokens,tokenCount);
     }
 
     /*Close fifo*/
