@@ -17,6 +17,9 @@
 
 #define SHM_SERVERCLIENT_SIZE 1024*1024*100
 
+sem_t* sem;
+char* shm_data;
+
 void close_client_fifo(int pid){
     /*Convert pid to char array */
     char pid_s[32] = "";
@@ -30,38 +33,13 @@ void close_client_fifo(int pid){
     unlink(fifo_client_path);
 }
 
-void close_client_server_shm_sem(int pid){
-    /*Convert pid to char array */
-    char pid_s[32] = "";
-    snprintf(pid_s,32,"%d",pid);
-
-    //Set semaphore path
-    char sem_path[64] = ""; 
-    strcat(sem_path,SEM_SERVERCLIENT_PATH);
-    strcat(sem_path,pid_s);
-
-    //Set shared memory path
-    char shm_path[64] = ""; 
-    strcat(shm_path,SHM_SERVERCLIENT_PATH);
-    strcat(shm_path,pid_s);
-    
-    /* Remove shared memory segment */
-    if (shm_unlink(shm_path) == -1) {
-        perror("shm_unlink");
-        exit(1);
-    }
-    
-    /* Remove semaphore segment */
-    if (sem_unlink(sem_path) == -1) {
-        perror("sem_unlink");
-        exit(1);
-    }
-}
-
 void sig_handler(int signo){
     if (signo == SIGINT){
         close_client_fifo(getpid());
-        close_client_server_shm_sem(getpid());
+        shm_data[0] = '\0';     
+        sprintf(shm_data,"5.quit");
+        sem_post(sem);
+        printf("Quitting..\n");
         exit(1);
     }
     else if (signo == SIGTERM){
@@ -69,12 +47,18 @@ void sig_handler(int signo){
     }
     else if (signo == SIGQUIT){
         close_client_fifo(getpid());
-        close_client_server_shm_sem(getpid());
+        shm_data[0] = '\0';     
+        sprintf(shm_data,"5.quit");
+        sem_post(sem);
+        printf("Quitting..\n");
         exit(1);
     }
     else if (signo == SIGTSTP){
         close_client_fifo(getpid());
-        close_client_server_shm_sem(getpid());
+        shm_data[0] = '\0';     
+        sprintf(shm_data,"5.quit");
+        sem_post(sem);
+        printf("Quitting..\n");
         exit(1);
     }
 }
@@ -249,7 +233,7 @@ int main(int argc, char *argv[])
     strcat(shm_path,pid_s);
 
     /* Semaphore to synchorinize handle operations between server and client*/
-    sem_t* sem = sem_open(sem_path,1);
+    sem = sem_open(sem_path,1);
     while (sem == SEM_FAILED) {
         sem = sem_open(sem_path,1);
     }
@@ -262,7 +246,7 @@ int main(int argc, char *argv[])
     printf("\n");
 
     /* Map shared memory into the address space of the parent and child processes */
-    char* shm_data = mmap(NULL, SHM_SERVERCLIENT_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    shm_data = mmap(NULL, SHM_SERVERCLIENT_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if(shm_data < 0){
         perror("Error : shared memory mmap");
     }
@@ -382,10 +366,14 @@ int main(int argc, char *argv[])
         }  
     }
 
+    /*Close fifo*/
+    close_client_fifo(getpid());
+
     /* Unmap shared memory segment */
     if (munmap(shm_data, SHM_SERVERCLIENT_SIZE) == -1) {
         perror("munmap");
     }
+
     /* Close shared memory file descriptor */
     if (close(shm_fd) == -1) {
         perror("close");
