@@ -18,6 +18,7 @@
 #define SEM_MAINSERVER_PATH "/tmp/sem_server_main"
 #define SEM_SERVERCLIENT_PATH "/tmp/sem_server_client"
 #define SHM_SERVERCLIENT_PATH "/tmp/shm_server_client"
+#define LOG_SERVER_PATH "/tmp/logFile"
 
 #define SHM_SERVERCLIENT_SIZE 1024*1024*100
 
@@ -293,8 +294,6 @@ void handleUpload(char* serverDirectory, char* tokens[], char* shm_data) {
     free(filePath);
 }
 
-
-
 /**
  * The function lists the contents of a directory and appends the names of the files to a shared memory
  * data buffer.
@@ -412,7 +411,7 @@ void handleWriteT(const char* serverDirectory, char* tokens[], int tokenCount, c
     }
 }
 
-void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMain , char serverDirectory[MAX_PATH_LENGTH]){
+void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMain , char serverDirectory[MAX_PATH_LENGTH] ,int fd_log){
    int child = fork();
     if(child == 0){
         //Set semaphore path
@@ -542,7 +541,19 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
         //Decrease current client count
         sem_wait(semMain);
         serverInfo->currentClientCount -= 1;
+
+        char* buff_log;
+        int buff_size = strlen("Client() disconnected\n") + strlen(pid);
+        buff_log = malloc(buff_size);
+        sprintf(buff_log,"Client(%s) disconnected\n",pid);
+
+        if(write(fd_log,buff_log,buff_size) == -1)
+            perror("Error: Log couldn't be writed to log file in child server");
+
         printf("Client(%s) disconnected\n",pid);
+
+        free(buff_log);
+
         sem_post(semMain);
 
         exit(0);
@@ -559,18 +570,44 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
  * synchronization between different processes. It is likely used to ensure that only one process is
  * accessing a shared resource (such as the serverInfo struct) at a time.
  */
-void processQueue(shared_serverInfo_t* serverInfo, sem_t* semMain ,int maxClientCount,char serverDirectory[MAX_PATH_LENGTH]) {
+void processQueue(shared_serverInfo_t* serverInfo, sem_t* semMain ,int maxClientCount,char serverDirectory[MAX_PATH_LENGTH],int fd_log) {
     if(isEmpty(&(serverInfo->queue)) != 1 && serverInfo->currentClientCount < maxClientCount){
         char* clientPid = dequeue(&(serverInfo->queue));
         int clientPidInt = atoi(clientPid);
+        char* buffLog;
+        int buffSize = 0;
         //Control if the client is still waiting or exited
         if (kill(clientPidInt, 15) == -1) {
-            printf("Client (%s) was terminated while waiting. Extracting from queue\n",clientPid);
+            sem_wait(semMain);
+
+            printf("Client(%s) was terminated while waiting. Extracting from queue\n",clientPid);
+            
+            buffSize = strlen("Client() was terminated while waiting. Extracting from queue\n") + strlen(clientPid);
+            buffLog = malloc(buffSize);
+            sprintf(buffLog,"Client(%s) was terminated while waiting. Extracting from queue\n",clientPid);
+            if(write(fd_log,buffLog,buffSize) == -1)
+                perror("Error : Log couldn't be logged to file");
+            
+            free(buffLog);
+
+            sem_post(semMain);
         }
         else{
-            printf("Client (%s) connected from queue\n",clientPid);
+            sem_wait(semMain);
+
+            printf("Client(%s) connected from queue\n",clientPid);
             serverInfo->currentClientCount += 1;
-            run_child_server(clientPid,serverInfo,semMain,serverDirectory);
+
+            buffSize = strlen("Client() connected from queue\n") + strlen(clientPid);
+            buffLog = malloc(buffSize);
+            sprintf(buffLog,"Client(%s) connected from queue\n",clientPid);
+            if(write(fd_log,buffLog,buffSize) == -1)
+                perror("Error : Log couldn't be logged to file");
+
+            free(buffLog);
+
+            sem_post(semMain);
+            run_child_server(clientPid,serverInfo,semMain,serverDirectory,fd_log);
         }
         free(clientPid);
     }
@@ -583,6 +620,7 @@ int main(int argc, char *argv[])
     int maxClientCount;
     int fd_server;
     int fd_client;
+    int fd_log;
     char buf_read[256];
     char buf_write[256];
     ssize_t n;
@@ -679,6 +717,21 @@ int main(int argc, char *argv[])
     snprintf(pid_s,32,"%d",pid);
     //printf("SERVER PID : %s\n",pid_s);
 
+
+    /************************
+    ** Set server log file **
+    *************************/
+    char log_server_path[64] = ""; 
+    strcat(log_server_path,LOG_SERVER_PATH);
+    strcat(log_server_path,pid_s);
+    strcat(log_server_path,".txt");
+
+    fd_log = open(log_server_path,O_CREAT|O_WRONLY,0777);
+    if(fd_log < 0){
+        perror("Error : Log file couldn't be opened!");
+        return -1;
+    }
+
     /********************************************************
     ** Set server fifo for handling client connect request **
     *********************************************************/
@@ -714,7 +767,7 @@ int main(int argc, char *argv[])
     }
 
     /********************************
-    ** Create erver main semaphore **
+    ** Create server main semaphore **
     *********************************/
 
     /* Semaphores to synchorinize handle connection request proces and child server process*/
@@ -733,7 +786,7 @@ int main(int argc, char *argv[])
     // Read data from the client via fd_server fifo
     while (1) {
         //Control queue and process the connection requests
-        processQueue(serverInfo,semMain,maxClientCount,serverDirectory);
+        processQueue(serverInfo,semMain,maxClientCount,serverDirectory,fd_log);
 
         ssize_t n = read(fd_server, buf_read, sizeof(buf_read));
         
@@ -761,7 +814,9 @@ int main(int argc, char *argv[])
 
             //Response to connection request
             sem_wait(semMain);
-            
+            char* buf_log;
+            int buffSize = 0;
+
             //If request is tryConnect and currentClientCount is full than reject
             if(connectionType == 't' && serverInfo->currentClientCount == maxClientCount){
                 strcat(response,"ERROR : Server has been reached the maximum client!\n");
@@ -770,6 +825,12 @@ int main(int argc, char *argv[])
                     return -1;
                 }        
                 printf("Client(%s) rejected\n",clientPid);
+
+                //Write to log buffer
+                buffSize = strlen("Client() rejected\n")+strlen(clientPid);
+                buf_log = malloc(buffSize);
+                sprintf(buf_log,"Client(%s) rejected\n",clientPid);
+                
             }
             //If request is Connect and currentClientCount is full than put queue
             else if(connectionType == 'c' && serverInfo->currentClientCount == maxClientCount){
@@ -781,7 +842,12 @@ int main(int argc, char *argv[])
                 //Insert client queue
                 enqueue(&(serverInfo->queue), clientPid);
                 printf("Client(%s) inserted queue\n",clientPid);
-                //printQueue(&(serverInfo->queue));
+
+                //Write to log buffer
+                buffSize = strlen("Client() inserted queue\n")+strlen(clientPid);
+                buf_log = malloc(buffSize);
+                sprintf(buf_log,"Client(%s) inserted queue\n",clientPid);
+                
             }
             //If currentClientCount is appropriate than approve
             else{
@@ -793,16 +859,26 @@ int main(int argc, char *argv[])
                 
                 printf("Client(%s) connected\n",clientPid);
                 serverInfo->currentClientCount += 1;
-                //printf("Current client count : %d\n",serverInfo->currentClientCount);
-                //printQueue(&(serverInfo->queue));
-                run_child_server(clientPid,serverInfo,semMain,serverDirectory);
+                run_child_server(clientPid,serverInfo,semMain,serverDirectory,fd_log);
+
+                //Write to log buffer
+                buffSize = strlen("Client() connected\n")+strlen(clientPid);
+                buf_log = malloc(buffSize);
+                sprintf(buf_log,"Client(%s) connected\n",clientPid);
             }
+
+            //Write to log file
+            if(write(fd_log,buf_log,buffSize) == -1)
+                perror("Error : Log couldn't be wrote to log file\n");
+
+            free(buf_log);
+
             sem_post(semMain);
             fflush(stdout);
         }
         
         //clear buffer
-        memset(buf_read, 0, sizeof(buf_read));  
+        memset(buf_read, 0, sizeof(buf_read));
     }
     
     /**********************
@@ -812,6 +888,7 @@ int main(int argc, char *argv[])
     close(shm_serverInfo_fd);
     close(fd_client);
     close(fd_server);
+    close(fd_log);
     unlink(fifo_server_path);
     return 0;
 }
