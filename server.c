@@ -505,6 +505,24 @@ void run_child_server(char* pid , shared_serverInfo_t* serverInfo , sem_t* semMa
                     //Free tokens
                     freeTokens(tokens, tokenCount);
 
+                    sem_wait(semMain);
+
+                    char* buff_log;
+                    int buff_size = strlen("Client() killed the server\n") + strlen(pid);
+                    buff_log = malloc(buff_size);
+                    sprintf(buff_log,"Client(%s) killed the server\n",pid);
+
+                    if(write(fd_log,buff_log,buff_size) == -1)
+                        perror("Error: Log couldn't be writed to log file in child server");
+
+                    printf("Client(%s) killed the server\n",pid);
+
+                    free(buff_log);
+
+                    sem_post(semMain);
+
+                    kill(getppid(),15);
+
                     break;
                 }
                 else{
